@@ -17,9 +17,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     for container_id, container in coordinator.containers.items():
         name = container_name(container)
         stack_info = coordinator.get_container_stack_info(container_id) or {}
-        entities.append(
-            ContainerHealthProblemSensor(coordinator, entry.entry_id, container_id, name, stack_info)
-        )
+        if coordinator.is_healthcheck_sensors_enabled():
+            entities.append(
+                ContainerHealthProblemSensor(coordinator, entry.entry_id, container_id, name, stack_info)
+            )
         if update_sensors_enabled:
             entities.append(
                 ContainerUpdateAvailableSensor(coordinator, entry.entry_id, container_id, name, stack_info)

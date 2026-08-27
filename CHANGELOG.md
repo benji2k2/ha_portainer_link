@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-08-27
+
+### Added
+- Added an instance device per Portainer environment, named after the environment itself, with all containers and stacks linked to it via `via_device`.
+- Added `unhealthy_containers` sensor on that instance device, counting containers whose healthcheck currently fails. Attributes list the affected container names, how many containers define a `HEALTHCHECK` at all, and the total container count.
+- Added `enable_healthcheck_sensors` option so the per-container health sensor and health problem sensor can be turned off, matching the existing toggles for resource, version, and update sensors.
+- Added `enable_instance_device` option to turn the instance device and its sensor off.
+
+### Fixed
+- Fixed leftover devices after an option change. Turning off stack view moved container entities onto new devices while the old stack devices stayed behind as unavailable, because Home Assistant keeps registry entries for entities an integration no longer provides, so the previous cleanup never saw those devices as empty. Cleanup now compares each device against the identifiers the current options actually produce.
+- Added `async_remove_config_entry_device`, which is what makes Home Assistant offer the delete button for a device at all. Devices the current configuration still produces stay protected.
+
 ## [0.6.0] - 2026-06-12
 
 ### Fixed

@@ -4,10 +4,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorEntity, SensorStateClass
 
 from .const import DATA_COORDINATOR, DOMAIN
-from .entity import BaseContainerEntity, container_health, container_name, is_container_running
+from .entity import (
+    HEALTH_UNHEALTHY,
+    BaseContainerEntity,
+    BaseHubEntity,
+    container_health,
+    container_name,
+    is_container_running,
+)
 
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
@@ -15,12 +22,16 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
     entities: list[SensorEntity] = []
 
+    if coordinator.is_instance_device_enabled():
+        entities.append(InstanceUnhealthyContainersSensor(coordinator, entry.entry_id))
+
     for container_id, container in coordinator.containers.items():
         name = container_name(container)
         stack_info = coordinator.get_container_stack_info(container_id) or {}
         entities.append(ContainerStatusSensor(coordinator, entry.entry_id, container_id, name, stack_info))
         entities.append(ContainerImageSensor(coordinator, entry.entry_id, container_id, name, stack_info))
-        entities.append(ContainerHealthSensor(coordinator, entry.entry_id, container_id, name, stack_info))
+        if coordinator.is_healthcheck_sensors_enabled():
+            entities.append(ContainerHealthSensor(coordinator, entry.entry_id, container_id, name, stack_info))
         if coordinator.is_resource_sensors_enabled():
             entities.extend(
                 [
@@ -186,3 +197,38 @@ class ContainerAvailableDigestSensor(PortainerContainerSensor):
     @property
     def native_value(self):
         return self.image_value("available_digest")
+
+
+class InstanceUnhealthyContainersSensor(BaseHubEntity, SensorEntity):
+    """Number of containers on this Portainer environment reporting unhealthy.
+
+    Only containers that define a HEALTHCHECK can ever be counted here, so a
+    value of 0 means "nothing is failing", not "everything was checked".
+    """
+
+    entity_suffix = "unhealthy_containers"
+    _attr_name = "Unhealthy containers"
+    _attr_icon = "mdi:heart-broken"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def _unhealthy_names(self) -> list[str]:
+        return sorted(
+            container_name(container)
+            for container in self.coordinator.containers.values()
+            if container_health(container) == HEALTH_UNHEALTHY
+        )
+
+    @property
+    def native_value(self) -> int:
+        return len(self._unhealthy_names())
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        monitored = sum(
+            1 for container in self.coordinator.containers.values() if container_health(container) is not None
+        )
+        return {
+            "unhealthy_containers": self._unhealthy_names(),
+            "containers_with_healthcheck": monitored,
+            "containers_total": len(self.coordinator.containers),
+        }

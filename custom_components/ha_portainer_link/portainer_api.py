@@ -62,6 +62,18 @@ class PortainerAPI:
         except Exception as e:
             _LOGGER.exception("[PortainerAPI] Fehler bei Authentifizierung: %s", e)
 
+    async def get_endpoint_info(self, endpoint_id):
+        """Return the Portainer endpoint record, used for the environment name."""
+        url = f"{self.base_url}/api/endpoints/{endpoint_id}"
+        try:
+            async with self.session.get(url, headers=self.headers, ssl=False) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                _LOGGER.debug("[PortainerAPI] Endpoint-Info %s: HTTP %s", endpoint_id, resp.status)
+        except Exception as e:
+            _LOGGER.debug("[PortainerAPI] Endpoint-Info fehlgeschlagen: %s", e)
+        return None
+
     async def get_containers(self, endpoint_id):
         # Prefer modular API if available
         try:

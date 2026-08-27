@@ -21,7 +21,15 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import PortainerDataUpdateCoordinator
-from .entity import container_name, container_unique_id, stable_container_key, sanitize
+from .entity import (
+    container_device_id,
+    container_name,
+    container_unique_id,
+    hub_device_id,
+    sanitize,
+    stable_container_key,
+    stack_device_id,
+)
 from .portainer_api import PortainerAPI
 
 _LOGGER = logging.getLogger(__name__)
@@ -69,7 +77,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     _register_services(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    _cleanup_empty_devices(hass, entry)
+    _cleanup_stale_devices(hass, entry, coordinator)
     return True
 
 
@@ -125,14 +133,90 @@ def _unregister_services(hass: HomeAssistant) -> None:
     hass.data.setdefault(DOMAIN, {})["_services_registered"] = False
 
 
-def _cleanup_empty_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Remove stale devices for this entry that no longer have entities."""
+def _active_device_ids(
+    entry: ConfigEntry,
+    coordinator: PortainerDataUpdateCoordinator,
+) -> set[str]:
+    """Return every device identifier the current options actually produce.
+
+    Toggling an option (stack view, instance device) moves entities onto
+    differently identified devices. Anything not in this set is left over from
+    a previous configuration.
+    """
+    base_url = coordinator.api.base_url
+    endpoint_id = coordinator.endpoint_id
+    active: set[str] = set()
+
+    if coordinator.is_instance_device_enabled():
+        active.add(hub_device_id(entry.entry_id, endpoint_id, base_url))
+
+    for container_id, container in coordinator.containers.items():
+        name = container_name(container)
+        stack_info = coordinator.get_container_stack_info(container_id) or {}
+        if stack_info.get("is_stack_container"):
+            active.add(
+                stack_device_id(entry.entry_id, endpoint_id, base_url, stack_info["stack_name"])
+            )
+        else:
+            active.add(
+                container_device_id(
+                    entry.entry_id, endpoint_id, base_url, stable_container_key(name, stack_info)
+                )
+            )
+
+    if coordinator.is_stack_view_enabled() and coordinator.is_stack_buttons_enabled():
+        for stack_name in coordinator.stack_names():
+            active.add(stack_device_id(entry.entry_id, endpoint_id, base_url, stack_name))
+
+    return active
+
+
+def _cleanup_stale_devices(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: PortainerDataUpdateCoordinator,
+) -> None:
+    """Drop devices this entry no longer produces, plus any left without entities.
+
+    Home Assistant keeps registry entries for entities an integration stops
+    providing, so a device orphaned by an option change never becomes empty on
+    its own and would otherwise linger as "unavailable" forever.
+    """
+    if not coordinator.containers:
+        # An empty fetch is not proof the containers are gone; never clean up on it.
+        return
+
     device_registry = dr.async_get(hass)
     entity_registry = er.async_get(hass)
+    active = _active_device_ids(entry, coordinator)
+
     for device in dr.async_entries_for_config_entry(device_registry, entry.entry_id):
-        entities = er.async_entries_for_device(entity_registry, device.id)
-        if not entities:
+        device_ids = {value for domain, value in device.identifiers if domain == DOMAIN}
+        if device_ids and not (device_ids & active):
+            _LOGGER.debug("Removing stale device %s (%s)", device.name, device_ids)
             device_registry.async_remove_device(device.id)
+            continue
+        if not er.async_entries_for_device(entity_registry, device.id):
+            device_registry.async_remove_device(device.id)
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    device_entry: dr.DeviceEntry,
+) -> bool:
+    """Let users delete devices the current configuration no longer produces.
+
+    Without this function Home Assistant hides the delete button entirely, which
+    is why leftover stack devices could not be removed from the UI.
+    """
+    data = hass.data.get(DOMAIN, {}).get(config_entry.entry_id)
+    coordinator = data.get(DATA_COORDINATOR) if isinstance(data, dict) else None
+    if coordinator is None:
+        return True
+
+    device_ids = {value for domain, value in device_entry.identifiers if domain == DOMAIN}
+    return not (device_ids & _active_device_ids(config_entry, coordinator))
 
 
 def _migrate_entity_unique_ids(

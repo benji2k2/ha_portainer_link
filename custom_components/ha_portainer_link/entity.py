@@ -115,6 +115,26 @@ def container_unique_id(entry_id: str, endpoint_id: int, stable_key: str, suffix
     return f"entry_{entry_id}_endpoint_{endpoint_id}_{sanitize(stable_key)}_{sanitize(suffix)}"
 
 
+def hub_unique_id(entry_id: str, endpoint_id: int, suffix: str) -> str:
+    """Return a stable unique_id for an instance-level entity."""
+    return f"entry_{entry_id}_endpoint_{endpoint_id}_instance_{sanitize(suffix)}"
+
+
+def hub_device_id(entry_id: str, endpoint_id: int, base_url: str) -> str:
+    """Return the device identifier for the Portainer instance itself."""
+    return f"{entry_id}_{endpoint_id}_{host_key(base_url)}"
+
+
+def container_device_id(entry_id: str, endpoint_id: int, base_url: str, stable_key: str) -> str:
+    """Return the device identifier for a standalone container."""
+    return f"{entry_id}_{endpoint_id}_{host_key(base_url)}_{sanitize(stable_key)}"
+
+
+def stack_device_id(entry_id: str, endpoint_id: int, base_url: str, name: str) -> str:
+    """Return the device identifier for a Docker stack."""
+    return f"{entry_id}_{endpoint_id}_{host_key(base_url)}_{stack_key(name)}"
+
+
 def stack_unique_id(entry_id: str, endpoint_id: int, name: str, suffix: str) -> str:
     """Return a stable unique_id for a stack entity."""
     return f"entry_{entry_id}_endpoint_{endpoint_id}_{stack_key(name)}_{sanitize(suffix)}"
@@ -127,12 +147,12 @@ def container_device_info(
     stable_key: str,
     name: str,
     container_id: str | None,
+    via_hub: bool = False,
 ) -> dict[str, Any]:
     """Return Home Assistant device info for a standalone container."""
     host_name = host_display_name(base_url)
-    device_id = f"{entry_id}_{endpoint_id}_{host_key(base_url)}_{sanitize(stable_key)}"
-    return {
-        "identifiers": {(DOMAIN, device_id)},
+    info = {
+        "identifiers": {(DOMAIN, container_device_id(entry_id, endpoint_id, base_url, stable_key))},
         "name": f"{name} ({host_name})",
         "manufacturer": "Docker via Portainer",
         "model": "Docker Container",
@@ -140,6 +160,9 @@ def container_device_info(
             f"{base_url}/#!/containers/{container_id}/details" if container_id else base_url
         ),
     }
+    if via_hub:
+        info["via_device"] = (DOMAIN, hub_device_id(entry_id, endpoint_id, base_url))
+    return info
 
 
 def stack_device_info(
@@ -147,16 +170,35 @@ def stack_device_info(
     endpoint_id: int,
     base_url: str,
     name: str,
+    via_hub: bool = False,
 ) -> dict[str, Any]:
     """Return Home Assistant device info for a Docker stack."""
     host_name = host_display_name(base_url)
-    device_id = f"{entry_id}_{endpoint_id}_{host_key(base_url)}_{stack_key(name)}"
-    return {
-        "identifiers": {(DOMAIN, device_id)},
+    info = {
+        "identifiers": {(DOMAIN, stack_device_id(entry_id, endpoint_id, base_url, name))},
         "name": f"Stack: {name} ({host_name})",
         "manufacturer": "Docker via Portainer",
         "model": "Docker Stack",
         "configuration_url": f"{base_url}/#!/stacks/{name}",
+    }
+    if via_hub:
+        info["via_device"] = (DOMAIN, hub_device_id(entry_id, endpoint_id, base_url))
+    return info
+
+
+def hub_device_info(
+    entry_id: str,
+    endpoint_id: int,
+    base_url: str,
+    endpoint_name: str | None = None,
+) -> dict[str, Any]:
+    """Return device info for the Portainer environment that owns the containers."""
+    return {
+        "identifiers": {(DOMAIN, hub_device_id(entry_id, endpoint_id, base_url))},
+        "name": endpoint_name or host_display_name(base_url),
+        "manufacturer": "Portainer",
+        "model": "Portainer Environment",
+        "configuration_url": f"{base_url}/#!/{endpoint_id}/docker/dashboard",
     }
 
 
@@ -219,12 +261,14 @@ class BaseContainerEntity(BasePortainerEntity):
 
     @property
     def device_info(self) -> dict[str, Any]:
+        via_hub = self.coordinator.is_instance_device_enabled()
         if self.stack_info.get("is_stack_container"):
             return stack_device_info(
                 self.entry_id,
                 self.endpoint_id,
                 self.coordinator.api.base_url,
                 self.stack_info.get("stack_name") or self.container_name,
+                via_hub=via_hub,
             )
         return container_device_info(
             self.entry_id,
@@ -233,6 +277,7 @@ class BaseContainerEntity(BasePortainerEntity):
             self.stable_key,
             self.container_name,
             self.current_container_id,
+            via_hub=via_hub,
         )
 
 
@@ -262,4 +307,25 @@ class BaseStackEntity(BasePortainerEntity):
             self.endpoint_id,
             self.coordinator.api.base_url,
             self.stack_name,
+            via_hub=self.coordinator.is_instance_device_enabled(),
+        )
+
+
+class BaseHubEntity(BasePortainerEntity):
+    """Base class for entities that describe the Portainer instance as a whole."""
+
+    entity_suffix = "instance_entity"
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, entry_id: str) -> None:
+        super().__init__(coordinator, entry_id)
+        self._attr_unique_id = hub_unique_id(entry_id, coordinator.endpoint_id, self.entity_suffix)
+
+    @property
+    def device_info(self) -> dict[str, Any]:
+        return hub_device_info(
+            self.entry_id,
+            self.endpoint_id,
+            self.coordinator.api.base_url,
+            self.coordinator.endpoint_name,
         )

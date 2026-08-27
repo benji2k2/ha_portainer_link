@@ -13,6 +13,8 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .const import (
     CONF_ENABLE_CONTAINER_BUTTONS,
+    CONF_ENABLE_HEALTHCHECK_SENSORS,
+    CONF_ENABLE_INSTANCE_DEVICE,
     CONF_ENABLE_RESOURCE_SENSORS,
     CONF_ENABLE_STACK_BUTTONS,
     CONF_ENABLE_STACK_VIEW,
@@ -48,6 +50,7 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
         )
         self.api = api
         self.endpoint_id = endpoint_id
+        self.endpoint_name: str | None = None
         self.containers: dict[str, dict[str, Any]] = {}
         self.stacks: dict[str, dict[str, Any]] = {}
         self.container_stack_map: dict[str, str] = {}
@@ -65,6 +68,9 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                 endpoint_exists = await self.api.containers.check_endpoint_exists(self.endpoint_id)
                 if not endpoint_exists:
                     raise UpdateFailed(f"Endpoint {self.endpoint_id} does not exist")
+
+            if self.endpoint_name is None and self.is_instance_device_enabled():
+                await self._refresh_endpoint_name()
 
             containers = await self.api.get_containers(self.endpoint_id)
             stacks = await self.api.get_stacks(self.endpoint_id)
@@ -230,6 +236,17 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
         elif not self.is_update_sensors_enabled():
             self.update_availability = {}
 
+    async def _refresh_endpoint_name(self) -> None:
+        """Look up the Portainer environment name once per config entry."""
+        try:
+            info = await self.api.get_endpoint_info(self.endpoint_id)
+        except Exception as err:
+            _LOGGER.debug("Failed to read endpoint name: %s", err)
+            return
+        name = (info or {}).get("Name")
+        if name:
+            self.endpoint_name = str(name)
+
     def get_container(self, container_id: str | None) -> dict[str, Any] | None:
         return self.containers.get(container_id or "")
 
@@ -284,6 +301,12 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
 
     def is_container_buttons_enabled(self) -> bool:
         return bool(self.config.get(CONF_ENABLE_CONTAINER_BUTTONS))
+
+    def is_healthcheck_sensors_enabled(self) -> bool:
+        return bool(self.config.get(CONF_ENABLE_HEALTHCHECK_SENSORS))
+
+    def is_instance_device_enabled(self) -> bool:
+        return bool(self.config.get(CONF_ENABLE_INSTANCE_DEVICE))
 
     async def async_shutdown(self) -> None:
         """Close API resources."""

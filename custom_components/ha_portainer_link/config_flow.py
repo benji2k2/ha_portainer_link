@@ -11,6 +11,8 @@ from homeassistant.core import callback
 from .const import (
     CONF_API_KEY,
     CONF_ENABLE_CONTAINER_BUTTONS,
+    CONF_ENABLE_HEALTHCHECK_SENSORS,
+    CONF_ENABLE_INSTANCE_DEVICE,
     CONF_ENABLE_RESOURCE_SENSORS,
     CONF_ENABLE_STACK_BUTTONS,
     CONF_ENABLE_STACK_VIEW,
@@ -115,6 +117,14 @@ class PortainerOptionsFlowHandler(config_entries.OptionsFlow):
                     vol.Required(
                         CONF_ENABLE_CONTAINER_BUTTONS,
                         default=current[CONF_ENABLE_CONTAINER_BUTTONS],
+                    ): bool,
+                    vol.Required(
+                        CONF_ENABLE_HEALTHCHECK_SENSORS,
+                        default=current[CONF_ENABLE_HEALTHCHECK_SENSORS],
+                    ): bool,
+                    vol.Required(
+                        CONF_ENABLE_INSTANCE_DEVICE,
+                        default=current[CONF_ENABLE_INSTANCE_DEVICE],
                     ): bool,
                     vol.Required(CONF_VERIFY_SSL, default=current[CONF_VERIFY_SSL]): bool,
                     vol.Optional(CONF_NOTIFY_SERVICE, default=current[CONF_NOTIFY_SERVICE]): str,
