@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.6] - 2026-08-27
+
+### Fixed
+- Fixed the prune button overstating how much it removed. `ImagesDeleted` holds one entry per removed tag and one per removed image id, so deleting a single image commonly reports three entries; counting the list length claimed three images. Deleted and untagged entries are now counted separately and reported as what they are.
+
 ## [0.6.5] - 2026-08-27
 
 ### Added

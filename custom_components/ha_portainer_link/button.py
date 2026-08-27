@@ -172,6 +172,20 @@ class StackUpdateButton(StackButton):
             await self._notify("Stack Update Failed", f"Failed to update stack {self.stack_name}")
 
 
+def _count_pruned(result: dict) -> tuple[int, int]:
+    """Return (images deleted, tag references dropped) from a prune response.
+
+    ImagesDeleted is not one entry per image: the daemon reports each removed
+    tag as its own "Untagged" item and each removed image id as a "Deleted" one,
+    so a single image commonly yields three entries. Counting the list length
+    overstates what happened.
+    """
+    items = result.get("ImagesDeleted") or []
+    deleted = sum(1 for item in items if isinstance(item, dict) and item.get("Deleted"))
+    untagged = sum(1 for item in items if isinstance(item, dict) and item.get("Untagged"))
+    return deleted, untagged
+
+
 def _format_bytes(value: int) -> str:
     """Return a compact human-readable size."""
     size = float(value or 0)
@@ -218,18 +232,26 @@ class PruneImagesButton(BaseHubEntity, ButtonEntity):
             except PortainerError as err:
                 await self._notify("Image Prune Failed", f"Portainer rejected the prune request: {err}")
                 return
-            deleted = len(result.get("ImagesDeleted") or [])
+            deleted, untagged = _count_pruned(result)
             reclaimed = _format_bytes(result.get("SpaceReclaimed") or 0)
             scope = "unused" if all_unused else "dangling"
-            hint = ""
-            if not deleted and not all_unused:
-                # The usual surprise: an unused image that still carries a tag is
-                # not dangling, so this mode skips it by design.
-                hint = " Images that still carry a tag are not dangling; enable prune_all_unused to include them."
-            await self._notify(
-                "Unused Images Deleted",
-                f"Removed {deleted} {scope} image(s), reclaimed {reclaimed}.{hint}",
-            )
+
+            if deleted:
+                summary = f"Removed {deleted} {scope} image(s), reclaimed {reclaimed}"
+                if untagged:
+                    summary += f" (also dropped {untagged} tag reference(s))"
+            elif untagged:
+                summary = f"Dropped {untagged} tag reference(s), reclaimed {reclaimed}"
+            else:
+                summary = f"Nothing to remove, reclaimed {reclaimed}"
+                if not all_unused:
+                    # The usual surprise: an unused image that still carries a
+                    # tag is not dangling, so this mode skips it by design.
+                    summary += (
+                        ". Images that still carry a tag are not dangling;"
+                        " enable prune_all_unused to include them"
+                    )
+            await self._notify("Unused Images Deleted", f"{summary}.")
             await self.coordinator.async_request_refresh()
         finally:
             self._attr_available = True
