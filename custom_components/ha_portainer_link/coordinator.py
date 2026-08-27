@@ -70,9 +70,12 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                 if not endpoint_exists:
                     raise UpdateFailed(f"Endpoint {self.endpoint_id} does not exist")
 
+            # The environment name also labels container and stack devices, so it
+            # is fetched regardless of whether the instance device is enabled.
+            if self.endpoint_name is None:
+                await self._refresh_endpoint_name()
+
             if self.is_instance_device_enabled():
-                if self.endpoint_name is None:
-                    await self._refresh_endpoint_name()
                 await self._refresh_docker_info()
             else:
                 self.docker_info = {}

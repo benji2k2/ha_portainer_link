@@ -148,9 +148,15 @@ def container_device_info(
     name: str,
     container_id: str | None,
     via_hub: bool = False,
+    instance_name: str | None = None,
 ) -> dict[str, Any]:
-    """Return Home Assistant device info for a standalone container."""
-    host_name = host_display_name(base_url)
+    """Return Home Assistant device info for a standalone container.
+
+    The suffix disambiguates containers of the same name across environments.
+    The Portainer environment name says more than the URL host it falls back to,
+    which is often just "portainer".
+    """
+    host_name = instance_name or host_display_name(base_url)
     info = {
         "identifiers": {(DOMAIN, container_device_id(entry_id, endpoint_id, base_url, stable_key))},
         "name": f"{name} ({host_name})",
@@ -171,9 +177,10 @@ def stack_device_info(
     base_url: str,
     name: str,
     via_hub: bool = False,
+    instance_name: str | None = None,
 ) -> dict[str, Any]:
     """Return Home Assistant device info for a Docker stack."""
-    host_name = host_display_name(base_url)
+    host_name = instance_name or host_display_name(base_url)
     info = {
         "identifiers": {(DOMAIN, stack_device_id(entry_id, endpoint_id, base_url, name))},
         "name": f"Stack: {name} ({host_name})",
@@ -281,6 +288,7 @@ class BaseContainerEntity(BasePortainerEntity):
                 self.coordinator.api.base_url,
                 self.stack_info.get("stack_name") or self.container_name,
                 via_hub=via_hub,
+                instance_name=self.coordinator.endpoint_name,
             )
         return container_device_info(
             self.entry_id,
@@ -290,6 +298,7 @@ class BaseContainerEntity(BasePortainerEntity):
             self.container_name,
             self.current_container_id,
             via_hub=via_hub,
+            instance_name=self.coordinator.endpoint_name,
         )
 
 
@@ -320,6 +329,7 @@ class BaseStackEntity(BasePortainerEntity):
             self.coordinator.api.base_url,
             self.stack_name,
             via_hub=self.coordinator.is_instance_device_enabled(),
+            instance_name=self.coordinator.endpoint_name,
         )
 
 
