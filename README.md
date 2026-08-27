@@ -6,7 +6,8 @@ The integration is designed to be conservative with network traffic. Runtime con
 
 ## Features
 
-- Container status, image, CPU, memory, and uptime sensors.
+- Container status, image, health, CPU, memory, and uptime sensors.
+- Health problem binary sensors that only trigger on a failing Docker healthcheck.
 - Container start/stop switches.
 - Container restart and pull/update buttons.
 - Stack grouping with stack start, stop, and update buttons.
@@ -151,7 +152,8 @@ For release testing, verify at least:
 
 - Bulk start/stop operations are not implemented.
 - Container log viewing is not implemented.
-- Health-check specific entities are not implemented.
+- Health entities only report for containers that define a Docker `HEALTHCHECK`; the
+  status sensor stays empty for every other container.
 - Registry update detection depends on registry support and available local image digest data.
 
 ## License

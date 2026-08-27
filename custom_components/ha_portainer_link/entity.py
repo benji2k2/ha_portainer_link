@@ -10,6 +10,14 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 
+HEALTH_STATES = ("healthy", "unhealthy", "starting")
+HEALTH_UNHEALTHY = "unhealthy"
+
+# Matches the health suffix docker appends to a running container's status
+# string: "(healthy)", "(unhealthy)" or "(health: starting)". "(Paused)" and
+# plain "Up 2 hours" deliberately do not match.
+_HEALTH_PATTERN = re.compile(r"\((?:health: )?(healthy|unhealthy|starting)\)")
+
 
 def sanitize(value: Any) -> str:
     """Return a stable identifier-safe string."""
@@ -49,6 +57,24 @@ def is_container_running(container: dict[str, Any] | None) -> bool:
     if isinstance(state, dict):
         return bool(state.get("Running")) or state.get("Status") == "running"
     return str(state or "").lower() == "running"
+
+
+def container_health(container: dict[str, Any] | None) -> str | None:
+    """Return the docker healthcheck state, or None when no healthcheck applies.
+
+    Docker only renders health into the container list status string while the
+    container runs, e.g. "Up 2 hours (healthy)" or "Up 5 seconds (health: starting)".
+    A container without a HEALTHCHECK stays "Up 2 hours", and the inspect payload
+    reports "none" for that same case, so both map to None here.
+    """
+    if not container:
+        return None
+    state = container.get("State")
+    if isinstance(state, dict):
+        status = (state.get("Health") or {}).get("Status")
+        return status if status in HEALTH_STATES else None
+    match = _HEALTH_PATTERN.search(str(container.get("Status") or ""))
+    return match.group(1) if match else None
 
 
 def stack_info_from_container(container: dict[str, Any]) -> dict[str, Any]:

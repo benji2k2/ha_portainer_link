@@ -7,7 +7,7 @@ from typing import Any
 from homeassistant.components.sensor import SensorEntity
 
 from .const import DATA_COORDINATOR, DOMAIN
-from .entity import BaseContainerEntity, container_name, is_container_running
+from .entity import BaseContainerEntity, container_health, container_name, is_container_running
 
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
@@ -20,6 +20,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         stack_info = coordinator.get_container_stack_info(container_id) or {}
         entities.append(ContainerStatusSensor(coordinator, entry.entry_id, container_id, name, stack_info))
         entities.append(ContainerImageSensor(coordinator, entry.entry_id, container_id, name, stack_info))
+        entities.append(ContainerHealthSensor(coordinator, entry.entry_id, container_id, name, stack_info))
         if coordinator.is_resource_sensors_enabled():
             entities.extend(
                 [
@@ -77,6 +78,17 @@ class ContainerStatusSensor(PortainerContainerSensor):
         if isinstance(state, dict):
             return state.get("Status") or ("running" if state.get("Running") else "stopped")
         return state or "unknown"
+
+
+class ContainerHealthSensor(PortainerContainerSensor):
+    entity_suffix = "health"
+    label = "Health"
+    icon_name = "mdi:heart-pulse"
+
+    @property
+    def native_value(self):
+        """Return healthy/unhealthy/starting, or None if the container has no healthcheck."""
+        return container_health(self.container)
 
 
 class ContainerCPUSensor(PortainerContainerSensor):
