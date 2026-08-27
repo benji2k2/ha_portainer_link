@@ -230,20 +230,13 @@ class PortainerImageAPI:
             return False
 
     async def pull_image_update(self, endpoint_id: int, container_id: str) -> bool:
-        """Pull the latest image for a container. This is explicit user action only."""
-        try:
-            container_info = await self._get_container_info(endpoint_id, container_id)
-            image_name = ((container_info or {}).get("Config") or {}).get("Image")
-            if not image_name:
-                return False
-            url = f"{self.base_url}/api/endpoints/{endpoint_id}/docker/images/create"
-            params = {"fromImage": image_name}
-            session = self.session or self.auth.session
-            async with session.post(url, params=params, headers=self.auth.get_headers(), ssl=self.ssl_verify) as resp:
-                return resp.status == 200
-        except Exception as err:
-            _LOGGER.exception("Error pulling image update for container %s: %s", container_id, err)
-            return False
+        """Pull the latest image for a container. This is explicit user action only.
+
+        Delegates to PortainerAPI, which consumes the streamed pull response.
+        Returning as soon as the status code arrives cancels the pull, since the
+        docker API aborts it when the connection closes.
+        """
+        return await self.auth.pull_image_update(endpoint_id, container_id)
 
     async def get_image_info(self, endpoint_id: int, image_id: str) -> dict[str, Any] | None:
         """Get detailed information about a local Docker image."""

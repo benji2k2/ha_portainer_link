@@ -1,3 +1,4 @@
+import json
 import logging
 import asyncio
 import aiohttp
@@ -271,37 +272,108 @@ class PortainerAPI:
             _LOGGER.exception("❌ Error checking image updates for container %s: %s", container_id, e)
             return False
 
+    @staticmethod
+    def split_image_reference(image: str) -> tuple[str, str]:
+        """Split an image reference into name and tag.
+
+        A digest is passed through as the tag, which the API accepts. A colon
+        only separates a tag when it follows the last slash, so a registry port
+        such as "registry.local:5000/app" is not mistaken for one. An untagged
+        reference defaults to "latest": the API pulls *every* tag of a
+        repository when no tag is given, unlike `docker pull`.
+        """
+        if "@" in image:
+            name, _, digest = image.partition("@")
+            return name, digest
+        last_slash = image.rfind("/")
+        last_colon = image.rfind(":")
+        if last_colon > last_slash:
+            return image[:last_colon], image[last_colon + 1:]
+        return image, "latest"
+
     async def pull_image_update(self, endpoint_id, container_id):
-        """Pull the latest image for a container."""
+        """Pull the latest image for a container.
+
+        The docker API streams pull progress as newline-delimited JSON and
+        documents that "the pull is cancelled if the HTTP connection is closed",
+        so the response body has to be consumed to completion. The status code
+        arrives with the headers, before a single byte is fetched, and failures
+        are reported inside the stream while the status stays 200 - so the
+        stream is also the only place an error can be detected.
+        """
         try:
-            # Get container inspection data to find the image
             container_info = await self.inspect_container(endpoint_id, container_id)
             if not container_info:
                 _LOGGER.error("No container info found for %s", container_id)
                 return False
-            
-            # Extract image information
-            image_name = container_info.get("Config", {}).get("Image")
+
+            image_name = (container_info.get("Config") or {}).get("Image")
             if not image_name:
                 _LOGGER.error("No image name found for container %s", container_id)
                 return False
-            
-            _LOGGER.info("Pulling latest image for container %s: %s", container_id, image_name)
-            
-            # Pull the latest image
+
+            name, tag = self.split_image_reference(image_name)
+            _LOGGER.info("Pulling image %s:%s for container %s", name, tag, container_id)
+
             url = f"{self.base_url}/api/endpoints/{endpoint_id}/docker/images/create"
-            params = {"fromImage": image_name}
-            
+            params = {"fromImage": name, "tag": tag}
+            # Pulls are slow; the session default would abort a large image.
+            timeout = aiohttp.ClientTimeout(total=1800, sock_read=300)
+
+            async with self.session.post(
+                url, headers=self.headers, params=params, ssl=False, timeout=timeout
+            ) as resp:
+                if resp.status != 200:
+                    body = (await resp.text())[:300]
+                    _LOGGER.error(
+                        "Failed to pull %s:%s for %s: HTTP %s %s", name, tag, container_id, resp.status, body
+                    )
+                    return False
+
+                error = None
+                layers = 0
+                async for raw_line in resp.content:
+                    line = raw_line.strip()
+                    if not line:
+                        continue
+                    try:
+                        payload = json.loads(line)
+                    except ValueError:
+                        continue
+                    if "error" in payload:
+                        error = payload.get("error") or payload.get("errorDetail")
+                    elif payload.get("status"):
+                        layers += 1
+
+            if error:
+                _LOGGER.error("Pull of %s:%s for %s failed: %s", name, tag, container_id, error)
+                return False
+
+            _LOGGER.info(
+                "Pulled %s:%s for container %s (%s progress messages)", name, tag, container_id, layers
+            )
+            return True
+        except Exception as e:
+            _LOGGER.exception("Error pulling image update for container %s: %s", container_id, e)
+            return False
+
+    async def prune_images(self, endpoint_id, dangling_only: bool = True):
+        """Delete unused images and return the API result, or None on failure.
+
+        With dangling_only the daemon removes only unused *and untagged* images.
+        Without it every unused image goes, including those of stopped
+        containers that may still be wanted.
+        """
+        url = f"{self.base_url}/api/endpoints/{endpoint_id}/docker/images/prune"
+        params = {"filters": json.dumps({"dangling": ["true" if dangling_only else "false"]})}
+        try:
             async with self.session.post(url, headers=self.headers, params=params, ssl=False) as resp:
                 if resp.status == 200:
-                    _LOGGER.info("✅ Successfully pulled image update for container %s (%s)", container_id, image_name)
-                    return True
-                else:
-                    _LOGGER.error("❌ Failed to pull image update for container %s: %s", container_id, resp.status)
-                    return False
+                    return await resp.json()
+                _LOGGER.error("Image prune failed: HTTP %s %s", resp.status, (await resp.text())[:300])
         except Exception as e:
-            _LOGGER.exception("❌ Error pulling image update for container %s: %s", container_id, e)
-            return False
+            _LOGGER.exception("Error pruning images: %s", e)
+        return None
 
     # ---------------------------
     # Convenience wrappers for image metadata (delegate to self.images)

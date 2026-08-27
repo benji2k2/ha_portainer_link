@@ -5,7 +5,7 @@ from __future__ import annotations
 from homeassistant.components.button import ButtonEntity
 
 from .const import CONF_NOTIFY_SERVICE, DATA_COORDINATOR, DOMAIN
-from .entity import BaseContainerEntity, BaseStackEntity, container_name
+from .entity import BaseContainerEntity, BaseHubEntity, BaseStackEntity, container_name
 
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
@@ -23,6 +23,9 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                     PullUpdateButton(coordinator, entry.entry_id, container_id, name, stack_info),
                 ]
             )
+
+    if coordinator.is_instance_device_enabled() and coordinator.is_prune_button_enabled():
+        entities.append(PruneImagesButton(coordinator, entry.entry_id))
 
     if coordinator.is_stack_view_enabled() and coordinator.is_stack_buttons_enabled():
         for stack_name in coordinator.stack_names():
@@ -162,3 +165,48 @@ class StackUpdateButton(StackButton):
             await self._notify("Stack Updated", f"Updated stack {self.stack_name}")
         else:
             await self._notify("Stack Update Failed", f"Failed to update stack {self.stack_name}")
+
+
+def _format_bytes(value: int) -> str:
+    """Return a compact human-readable size."""
+    size = float(value or 0)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} GB"
+
+
+class PruneImagesButton(BaseHubEntity, ButtonEntity):
+    """Delete unused images on this Portainer environment.
+
+    Restricted to dangling images: unused *and* untagged. Pruning every unused
+    image would also drop the images of stopped containers, which a button that
+    fires without any confirmation should not do.
+    """
+
+    entity_suffix = "prune_images"
+    _attr_name = "Delete unused images"
+    _attr_icon = "mdi:broom"
+
+    async def _notify(self, title: str, message: str) -> None:
+        await _send_notification(self.hass, self.coordinator, title, message)
+
+    async def async_press(self) -> None:
+        self._attr_available = False
+        self.async_write_ha_state()
+        try:
+            result = await self.coordinator.api.prune_images(self.endpoint_id, dangling_only=True)
+            if result is None:
+                await self._notify("Image Prune Failed", "Portainer rejected the prune request")
+                return
+            deleted = len(result.get("ImagesDeleted") or [])
+            reclaimed = _format_bytes(result.get("SpaceReclaimed") or 0)
+            await self._notify(
+                "Unused Images Deleted",
+                f"Removed {deleted} dangling image(s), reclaimed {reclaimed}",
+            )
+            await self.coordinator.async_request_refresh()
+        finally:
+            self._attr_available = True
+            self.async_write_ha_state()

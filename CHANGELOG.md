@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-08-27
+
+### Fixed
+- Fixed image pulls, which never actually downloaded anything. The docker API streams pull progress and documents that "the pull is cancelled if the HTTP connection is closed", but the response body was never read: the status code arrives with the headers, before a single byte is fetched, so the connection closed and the daemon aborted the pull straight away.
+- Fixed pull failures being reported as success. The API answers 200 and reports errors inside the streamed body, so checking only the status code meant the pull button could never fail. The stream is now parsed and any `error` entry fails the operation.
+- Fixed the image reference being passed to `fromImage` unsplit. Without a tag the API pulls *every* tag of a repository, unlike `docker pull`, so an untagged container image triggered a mass download. Name and tag are now separated, defaulting to `latest`, with digests and registry ports (`registry.local:5000/app`) handled correctly.
+- Pulls now use their own generous timeout instead of the session default, which could abort a large image mid-download.
+- Removed the duplicate pull implementation in `image_api.py`, which carried the same three bugs and was never called; it now delegates.
+
+### Added
+- Added an optional "Delete unused images" button on the instance device, off by default. It prunes only dangling images (unused *and* untagged) and reports how many were removed and how much space was reclaimed. Pruning all unused images would also drop the images of stopped containers, which a button that fires without confirmation should not do.
+
 ## [0.6.1] - 2026-08-27
 
 ### Added

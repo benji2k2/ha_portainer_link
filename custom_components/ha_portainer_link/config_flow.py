@@ -13,6 +13,7 @@ from .const import (
     CONF_ENABLE_CONTAINER_BUTTONS,
     CONF_ENABLE_HEALTHCHECK_SENSORS,
     CONF_ENABLE_INSTANCE_DEVICE,
+    CONF_ENABLE_PRUNE_BUTTON,
     CONF_ENABLE_RESOURCE_SENSORS,
     CONF_ENABLE_STACK_BUTTONS,
     CONF_ENABLE_STACK_VIEW,
@@ -124,6 +125,7 @@ class PortainerOptionsFlowHandler(config_entries.OptionsFlow):
                     ): bool,
                     vol.Required(
                         CONF_ENABLE_INSTANCE_DEVICE,
+    CONF_ENABLE_PRUNE_BUTTON,
                         default=current[CONF_ENABLE_INSTANCE_DEVICE],
                     ): bool,
                     vol.Required(CONF_VERIFY_SSL, default=current[CONF_VERIFY_SSL]): bool,

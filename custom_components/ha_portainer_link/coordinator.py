@@ -15,6 +15,7 @@ from .const import (
     CONF_ENABLE_CONTAINER_BUTTONS,
     CONF_ENABLE_HEALTHCHECK_SENSORS,
     CONF_ENABLE_INSTANCE_DEVICE,
+    CONF_ENABLE_PRUNE_BUTTON,
     CONF_ENABLE_RESOURCE_SENSORS,
     CONF_ENABLE_STACK_BUTTONS,
     CONF_ENABLE_STACK_VIEW,
@@ -335,6 +336,9 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
 
     def is_instance_device_enabled(self) -> bool:
         return bool(self.config.get(CONF_ENABLE_INSTANCE_DEVICE))
+
+    def is_prune_button_enabled(self) -> bool:
+        return bool(self.config.get(CONF_ENABLE_PRUNE_BUTTON))
 
     async def async_shutdown(self) -> None:
         """Close API resources."""
