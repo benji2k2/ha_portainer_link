@@ -185,14 +185,23 @@ def _format_bytes(value: int) -> str:
 class PruneImagesButton(BaseHubEntity, ButtonEntity):
     """Delete unused images on this Portainer environment.
 
-    Restricted to dangling images: unused *and* untagged. Pruning every unused
-    image would also drop the images of stopped containers, which a button that
-    fires without any confirmation should not do.
+    Defaults to dangling images only: unused *and* untagged. The prune_all_unused
+    option widens it to every unused image, which also drops the images of
+    stopped containers - hence not the default for a button that fires without
+    any confirmation.
     """
 
     entity_suffix = "prune_images"
     _attr_name = "Delete unused images"
     _attr_icon = "mdi:broom"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str]:
+        return {
+            "scope": "all unused images"
+            if self.coordinator.is_prune_all_unused()
+            else "dangling images only"
+        }
 
     async def _notify(self, title: str, message: str) -> None:
         await _send_notification(self.hass, self.coordinator, title, message)
@@ -201,16 +210,25 @@ class PruneImagesButton(BaseHubEntity, ButtonEntity):
         self._attr_available = False
         self.async_write_ha_state()
         try:
+            all_unused = self.coordinator.is_prune_all_unused()
             try:
-                result = await self.coordinator.api.prune_images(self.endpoint_id, dangling_only=True)
+                result = await self.coordinator.api.prune_images(
+                    self.endpoint_id, dangling_only=not all_unused
+                )
             except PortainerError as err:
                 await self._notify("Image Prune Failed", f"Portainer rejected the prune request: {err}")
                 return
             deleted = len(result.get("ImagesDeleted") or [])
             reclaimed = _format_bytes(result.get("SpaceReclaimed") or 0)
+            scope = "unused" if all_unused else "dangling"
+            hint = ""
+            if not deleted and not all_unused:
+                # The usual surprise: an unused image that still carries a tag is
+                # not dangling, so this mode skips it by design.
+                hint = " Images that still carry a tag are not dangling; enable prune_all_unused to include them."
             await self._notify(
                 "Unused Images Deleted",
-                f"Removed {deleted} dangling image(s), reclaimed {reclaimed}",
+                f"Removed {deleted} {scope} image(s), reclaimed {reclaimed}.{hint}",
             )
             await self.coordinator.async_request_refresh()
         finally:

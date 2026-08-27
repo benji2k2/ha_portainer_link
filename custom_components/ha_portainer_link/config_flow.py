@@ -14,6 +14,7 @@ from .const import (
     CONF_ENABLE_HEALTHCHECK_SENSORS,
     CONF_ENABLE_INSTANCE_DEVICE,
     CONF_ENABLE_PRUNE_BUTTON,
+    CONF_PRUNE_ALL_UNUSED,
     CONF_ENABLE_RESOURCE_SENSORS,
     CONF_ENABLE_STACK_BUTTONS,
     CONF_ENABLE_STACK_VIEW,
@@ -130,6 +131,10 @@ class PortainerOptionsFlowHandler(config_entries.OptionsFlow):
                     vol.Required(
                         CONF_ENABLE_PRUNE_BUTTON,
                         default=current[CONF_ENABLE_PRUNE_BUTTON],
+                    ): bool,
+                    vol.Required(
+                        CONF_PRUNE_ALL_UNUSED,
+                        default=current[CONF_PRUNE_ALL_UNUSED],
                     ): bool,
                     vol.Required(CONF_VERIFY_SSL, default=current[CONF_VERIFY_SSL]): bool,
                     vol.Optional(CONF_NOTIFY_SERVICE, default=current[CONF_NOTIFY_SERVICE]): str,

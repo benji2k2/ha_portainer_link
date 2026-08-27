@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-08-27
+
+### Added
+- Added a `prune_all_unused` option. The prune button removes only dangling images by default - unused *and* untagged - which silently skips an unused image that still carries any tag. Enabling this widens it to every unused image, including those of stopped containers. Off by default, since the button fires without confirmation.
+- The prune button exposes its current scope as a `scope` attribute, and reports "dangling" or "unused" in its notification. When it removes nothing in the default mode it now explains why, rather than just reporting zero.
+
 ## [0.6.4] - 2026-08-27
 
 ### Fixed
