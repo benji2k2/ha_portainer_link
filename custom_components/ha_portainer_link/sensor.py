@@ -73,7 +73,7 @@ class PortainerContainerSensor(BaseContainerEntity, SensorEntity):
 
     def __init__(self, coordinator, entry_id: str, container_id: str, name: str, stack_info: dict[str, Any]) -> None:
         super().__init__(coordinator, entry_id, container_id, name, stack_info)
-        self._attr_name = f"{name} {self.label}"
+        self._attr_name = self.label
         self._attr_icon = self.icon_name
 
     @property

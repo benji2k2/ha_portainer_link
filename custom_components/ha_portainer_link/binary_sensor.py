@@ -37,7 +37,7 @@ class ContainerUpdateAvailableSensor(BaseContainerEntity, BinarySensorEntity):
 
     def __init__(self, coordinator, entry_id, container_id, name, stack_info) -> None:
         super().__init__(coordinator, entry_id, container_id, name, stack_info)
-        self._attr_name = f"{name} Update Available"
+        self._attr_name = "Update available"
 
     @property
     def is_on(self) -> bool:
@@ -57,7 +57,7 @@ class ContainerHealthProblemSensor(BaseContainerEntity, BinarySensorEntity):
 
     def __init__(self, coordinator, entry_id, container_id, name, stack_info) -> None:
         super().__init__(coordinator, entry_id, container_id, name, stack_info)
-        self._attr_name = f"{name} Health Problem"
+        self._attr_name = "Health problem"
 
     @property
     def is_on(self) -> bool:

@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `enable_instance_device` option to turn the instance device and its sensor off.
 
 ### Changed
+- Entity names now describe only the property they report. `has_entity_name` lets Home Assistant compose the display name from the device, so a container's sensors read "Uptime" and "Status" on its device page instead of repeating the container name in every row. Newly created entities get ids of the form `sensor.<container>_<environment>_<property>`; entities that already exist keep the id Home Assistant assigned them on first registration.
 - Container and stack devices are now suffixed with the Portainer environment name instead of the URL host, which was frequently just "portainer" and said nothing about which environment a container belonged to. The host name remains the fallback when Portainer does not report an environment name. Device identifiers are unchanged, so existing devices, entity IDs and history are unaffected.
 
 ### Fixed

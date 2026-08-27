@@ -57,7 +57,7 @@ class ContainerButton(BaseContainerEntity, ButtonEntity):
 
     def __init__(self, coordinator, entry_id, container_id, name, stack_info) -> None:
         super().__init__(coordinator, entry_id, container_id, name, stack_info)
-        self._attr_name = f"{name} {self.label}"
+        self._attr_name = self.label
 
     async def _notify(self, title: str, message: str) -> None:
         await _send_notification(self.hass, self.coordinator, title, message)
@@ -110,7 +110,7 @@ class StackButton(BaseStackEntity, ButtonEntity):
 
     def __init__(self, coordinator, entry_id, stack_name) -> None:
         super().__init__(coordinator, entry_id, stack_name)
-        self._attr_name = f"Stack: {stack_name} {self.label}"
+        self._attr_name = self.label
 
     async def _notify(self, title: str, message: str) -> None:
         await _send_notification(self.hass, self.coordinator, title, message)

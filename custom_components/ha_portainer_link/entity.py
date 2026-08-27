@@ -222,8 +222,14 @@ def hub_device_info(
 
 
 class BasePortainerEntity(CoordinatorEntity):
-    """Base class for coordinator-backed Portainer entities."""
+    """Base class for coordinator-backed Portainer entities.
 
+    Entity names describe only the property. Home Assistant prefixes the device
+    name for display and for the generated entity id, so the container name is
+    not repeated inside every entity name.
+    """
+
+    _attr_has_entity_name = True
     _attr_should_poll = False
 
     def __init__(self, coordinator, entry_id: str) -> None:
@@ -337,7 +343,6 @@ class BaseHubEntity(BasePortainerEntity):
     """Base class for entities that describe the Portainer instance as a whole."""
 
     entity_suffix = "instance_entity"
-    _attr_has_entity_name = True
 
     def __init__(self, coordinator, entry_id: str) -> None:
         super().__init__(coordinator, entry_id)

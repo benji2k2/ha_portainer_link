@@ -32,7 +32,7 @@ class ContainerSwitch(BaseContainerEntity, SwitchEntity):
 
     def __init__(self, coordinator, entry_id, container_id, name, stack_info) -> None:
         super().__init__(coordinator, entry_id, container_id, name, stack_info)
-        self._attr_name = f"{name} Switch"
+        self._attr_name = "Switch"
 
     @property
     def is_on(self) -> bool:

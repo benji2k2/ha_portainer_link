@@ -42,7 +42,7 @@ class ContainerUpdateEntity(BaseContainerEntity, UpdateEntity):
 
     def __init__(self, coordinator, entry_id, container_id, name, stack_info) -> None:
         super().__init__(coordinator, entry_id, container_id, name, stack_info)
-        self._attr_name = f"{name} Update"
+        self._attr_name = "Update"
 
     @property
     def installed_version(self):
