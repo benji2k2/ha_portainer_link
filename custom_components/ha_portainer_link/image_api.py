@@ -62,7 +62,11 @@ class PortainerImageAPI:
 
         parts = ref.split("/")
         first = parts[0] if parts else ""
-        if "." in first or ":" in first or first == "localhost":
+        # A registry only exists when something follows it. Without a slash the
+        # whole reference is the repository, and a colon there is the tag
+        # separator, not a registry port: "alpine:3.18" is library/alpine at
+        # tag 3.18, not a host called "alpine:3.18".
+        if len(parts) > 1 and ("." in first or ":" in first or first == "localhost"):
             registry = first
             repository = "/".join(parts[1:])
         else:
@@ -204,6 +208,10 @@ class PortainerImageAPI:
         if registry == "registry-1.docker.io":
             candidates.add(f"docker.io/{repository}")
             candidates.add(f"index.docker.io/{repository}")
+            # Docker records official images without their "library/" prefix,
+            # so "alpine:3.18" carries the RepoDigest "alpine@sha256:...".
+            short = repository[len("library/"):] if repository.startswith("library/") else repository
+            candidates.update({short, f"docker.io/{short}", f"index.docker.io/{short}"})
         return repo_part in candidates or repo_part.endswith(f"/{repository}")
 
     def _local_repo_digest(self, image_data: dict[str, Any], image_name: str | None = None) -> str | None:

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-08-27
+
+### Fixed
+- Fixed digest sensors and update detection for official Docker Hub images carrying a tag, such as `alpine:3.18`, `nginx:1.25` or `redis:7`. `_parse_image_ref` treated the tag separator as a registry port whenever the reference had no slash, so `alpine:3.18` parsed as a registry named "alpine:3.18" with an empty repository. The remote lookup then had nothing to query and the local comparison nothing to match, leaving both Current Digest and Available Digest at "unknown" and update detection permanently silent. A registry component now requires something to follow it. Images with a namespace (`linuxserver/plex:latest`) or an explicit registry were unaffected, which is why only official images misbehaved.
+- Fixed the local digest lookup for those same images. Docker records official images in `RepoDigests` without their `library/` prefix, so `alpine:3.18` carries `alpine@sha256:...` and no longer matched once the repository resolved to `library/alpine`.
+
 ## [0.6.2] - 2026-08-27
 
 ### Fixed
