@@ -8,6 +8,7 @@ except ImportError:
     from homeassistant.components.update import UpdateEntity
 
     UpdateEntityFeature = None
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import EntityCategory
 
 from .const import DATA_COORDINATOR, DOMAIN
@@ -85,9 +86,36 @@ class ContainerUpdateEntity(BaseContainerEntity, UpdateEntity):
         return self.coordinator.get_update_availability(self.current_container_id)
 
     async def async_install(self, version: str | None, backup: bool, **kwargs) -> None:
-        """Pull the latest image explicitly."""
+        """Pull the new image and recreate the container from it.
+
+        Pulling alone leaves the container running the old image, which is why
+        pressing install previously appeared to do nothing. Portainer's recreate
+        endpoint pulls and rebuilds the container from its existing
+        configuration in one step.
+        """
         container_id = self.current_container_id
         if not container_id:
             return
-        await self.coordinator.api.pull_image_update(self.endpoint_id, container_id)
+
+        info = await self.coordinator.api.inspect_container(self.endpoint_id, container_id) or {}
+        if (info.get("HostConfig") or {}).get("AutoRemove"):
+            # Docker deletes such a container the moment it stops, so a recreate
+            # would destroy it rather than replace it. Portainer hides the
+            # action for these containers as well.
+            raise HomeAssistantError(
+                f"{self.container_name} runs with --rm and cannot be recreated; "
+                "it would be removed instead of replaced"
+            )
+
+        image = (info.get("Config") or {}).get("Image") or ""
+        if image.lower().startswith("sha256"):
+            raise HomeAssistantError(
+                f"{self.container_name} is pinned to an image digest, so there is nothing to pull"
+            )
+
+        result = await self.coordinator.api.recreate_container(
+            self.endpoint_id, container_id, pull_image=True
+        )
+        if result is None:
+            raise HomeAssistantError(f"Portainer could not recreate {self.container_name}")
         await self.coordinator.async_request_refresh()

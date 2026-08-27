@@ -357,6 +357,35 @@ class PortainerAPI:
             _LOGGER.exception("Error pulling image update for container %s: %s", container_id, e)
             return False
 
+    async def recreate_container(self, endpoint_id, container_id, pull_image: bool = True):
+        """Recreate a container from its existing configuration, pulling first.
+
+        Uses Portainer's own recreate endpoint instead of a hand-rolled
+        stop/remove/create, so volumes, networks, labels and restart policy are
+        carried over exactly as the Portainer UI does it. Note the path is
+        /api/docker/{id}/... - the direct handler - not the
+        /api/endpoints/{id}/docker/... proxy the rest of this class uses.
+
+        The container id changes on success; the coordinator re-resolves
+        containers by their stable key, so entities follow automatically.
+        """
+        url = f"{self.base_url}/api/docker/{endpoint_id}/containers/{container_id}/recreate"
+        # A recreate pulls the image first, so it needs the same headroom.
+        timeout = aiohttp.ClientTimeout(total=1800, sock_read=300)
+        try:
+            async with self.session.post(
+                url, headers=self.headers, json={"PullImage": bool(pull_image)}, ssl=False, timeout=timeout
+            ) as resp:
+                if resp.status in (200, 201):
+                    return await resp.json()
+                _LOGGER.error(
+                    "Failed to recreate container %s: HTTP %s %s",
+                    container_id, resp.status, (await resp.text())[:300],
+                )
+        except Exception as e:
+            _LOGGER.exception("Error recreating container %s: %s", container_id, e)
+        return None
+
     async def prune_images(self, endpoint_id, dangling_only: bool = True):
         """Delete unused images and return the API result, or None on failure.
 
