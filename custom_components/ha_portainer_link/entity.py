@@ -191,15 +191,27 @@ def hub_device_info(
     endpoint_id: int,
     base_url: str,
     endpoint_name: str | None = None,
+    docker_info: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Return device info for the Portainer environment that owns the containers."""
-    return {
+    """Return device info for the Portainer environment that owns the containers.
+
+    Docker daemon details are near-static, so they belong on the device rather
+    than in sensors. Every field is optional: an endpoint that never answered
+    still yields a usable device.
+    """
+    info = docker_info or {}
+    device: dict[str, Any] = {
         "identifiers": {(DOMAIN, hub_device_id(entry_id, endpoint_id, base_url))},
         "name": endpoint_name or host_display_name(base_url),
         "manufacturer": "Portainer",
-        "model": "Portainer Environment",
+        "model": info.get("OperatingSystem") or "Portainer Environment",
         "configuration_url": f"{base_url}/#!/{endpoint_id}/docker/dashboard",
     }
+    if server_version := info.get("ServerVersion"):
+        device["sw_version"] = f"Docker {server_version}"
+    if architecture := info.get("Architecture"):
+        device["hw_version"] = str(architecture)
+    return device
 
 
 class BasePortainerEntity(CoordinatorEntity):
@@ -328,4 +340,5 @@ class BaseHubEntity(BasePortainerEntity):
             self.endpoint_id,
             self.coordinator.api.base_url,
             self.coordinator.endpoint_name,
+            self.coordinator.docker_info,
         )

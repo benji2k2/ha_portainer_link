@@ -51,6 +51,7 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
         self.api = api
         self.endpoint_id = endpoint_id
         self.endpoint_name: str | None = None
+        self.docker_info: dict[str, Any] = {}
         self.containers: dict[str, dict[str, Any]] = {}
         self.stacks: dict[str, dict[str, Any]] = {}
         self.container_stack_map: dict[str, str] = {}
@@ -69,8 +70,12 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                 if not endpoint_exists:
                     raise UpdateFailed(f"Endpoint {self.endpoint_id} does not exist")
 
-            if self.endpoint_name is None and self.is_instance_device_enabled():
-                await self._refresh_endpoint_name()
+            if self.is_instance_device_enabled():
+                if self.endpoint_name is None:
+                    await self._refresh_endpoint_name()
+                await self._refresh_docker_info()
+            else:
+                self.docker_info = {}
 
             containers = await self.api.get_containers(self.endpoint_id)
             stacks = await self.api.get_stacks(self.endpoint_id)
@@ -86,6 +91,7 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
 
             return {
                 "containers": self.containers,
+                "docker_info": self.docker_info,
                 "stacks": self.stacks,
                 "container_stack_map": self.container_stack_map,
                 "metrics": self.metrics,
@@ -246,6 +252,25 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
         name = (info or {}).get("Name")
         if name:
             self.endpoint_name = str(name)
+
+    async def _refresh_docker_info(self) -> None:
+        """Refresh docker daemon info; keep the previous payload on failure."""
+        try:
+            info = await self.api.get_docker_info(self.endpoint_id)
+        except Exception as err:
+            _LOGGER.debug("Failed to read docker info: %s", err)
+            return
+        if isinstance(info, dict):
+            self.docker_info = info
+
+    def running_container_count(self) -> int:
+        return sum(1 for container in self.containers.values() if is_container_running(container))
+
+    def stopped_container_count(self) -> int:
+        return len(self.containers) - self.running_container_count()
+
+    def update_available_count(self) -> int:
+        return sum(1 for container_id in self.containers if self.get_update_availability(container_id))
 
     def get_container(self, container_id: str | None) -> dict[str, Any] | None:
         return self.containers.get(container_id or "")

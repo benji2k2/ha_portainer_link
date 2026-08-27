@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity, SensorStateClass
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.helpers.entity import EntityCategory
 
 from .const import DATA_COORDINATOR, DOMAIN
 from .entity import (
@@ -23,7 +24,19 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     entities: list[SensorEntity] = []
 
     if coordinator.is_instance_device_enabled():
-        entities.append(InstanceUnhealthyContainersSensor(coordinator, entry.entry_id))
+        entities.extend(
+            [
+                InstanceContainersSensor(coordinator, entry.entry_id),
+                InstanceRunningContainersSensor(coordinator, entry.entry_id),
+                InstanceStoppedContainersSensor(coordinator, entry.entry_id),
+                InstanceUnhealthyContainersSensor(coordinator, entry.entry_id),
+                InstanceStacksSensor(coordinator, entry.entry_id),
+                InstanceProcessorsSensor(coordinator, entry.entry_id),
+                InstanceMemorySensor(coordinator, entry.entry_id),
+            ]
+        )
+        if coordinator.is_update_sensors_enabled():
+            entities.append(InstanceUpdatesAvailableSensor(coordinator, entry.entry_id))
 
     for container_id, container in coordinator.containers.items():
         name = container_name(container)
@@ -232,3 +245,90 @@ class InstanceUnhealthyContainersSensor(BaseHubEntity, SensorEntity):
             "containers_with_healthcheck": monitored,
             "containers_total": len(self.coordinator.containers),
         }
+
+
+class InstanceCountSensor(BaseHubEntity, SensorEntity):
+    """Base class for instance-level counts derived from coordinator data."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+
+class InstanceContainersSensor(InstanceCountSensor):
+    entity_suffix = "containers"
+    _attr_name = "Containers"
+    _attr_icon = "mdi:docker"
+
+    @property
+    def native_value(self) -> int:
+        return len(self.coordinator.containers)
+
+
+class InstanceRunningContainersSensor(InstanceCountSensor):
+    entity_suffix = "running_containers"
+    _attr_name = "Running containers"
+    _attr_icon = "mdi:play-circle-outline"
+
+    @property
+    def native_value(self) -> int:
+        return self.coordinator.running_container_count()
+
+
+class InstanceStoppedContainersSensor(InstanceCountSensor):
+    entity_suffix = "stopped_containers"
+    _attr_name = "Stopped containers"
+    _attr_icon = "mdi:stop-circle-outline"
+
+    @property
+    def native_value(self) -> int:
+        return self.coordinator.stopped_container_count()
+
+
+class InstanceStacksSensor(InstanceCountSensor):
+    entity_suffix = "stacks"
+    _attr_name = "Stacks"
+    _attr_icon = "mdi:layers-outline"
+
+    @property
+    def native_value(self) -> int:
+        return len(self.coordinator.stack_names())
+
+
+class InstanceUpdatesAvailableSensor(InstanceCountSensor):
+    entity_suffix = "updates_available"
+    _attr_name = "Updates available"
+    _attr_icon = "mdi:package-up"
+
+    @property
+    def native_value(self) -> int:
+        return self.coordinator.update_available_count()
+
+
+class InstanceProcessorsSensor(BaseHubEntity, SensorEntity):
+    """CPU count reported by the docker daemon."""
+
+    entity_suffix = "processors"
+    _attr_name = "Processors"
+    _attr_icon = "mdi:cpu-64-bit"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def native_value(self):
+        return self.coordinator.docker_info.get("NCPU")
+
+
+class InstanceMemorySensor(BaseHubEntity, SensorEntity):
+    """Total memory reported by the docker daemon."""
+
+    entity_suffix = "memory_total"
+    _attr_name = "Memory total"
+    _attr_icon = "mdi:memory"
+    _attr_device_class = SensorDeviceClass.DATA_SIZE
+    _attr_native_unit_of_measurement = "GB"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def native_value(self):
+        total = self.coordinator.docker_info.get("MemTotal")
+        if not isinstance(total, (int, float)):
+            return None
+        return round(total / (1024 ** 3), 2)

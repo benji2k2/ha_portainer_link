@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added an instance device per Portainer environment, named after the environment itself, with all containers and stacks linked to it via `via_device`.
 - Added `unhealthy_containers` sensor on that instance device, counting containers whose healthcheck currently fails. Attributes list the affected container names, how many containers define a `HEALTHCHECK` at all, and the total container count.
+- Added instance sensors for total, running and stopped containers, stack count, and containers with an available update. All are aggregated from data the coordinator already holds, so they cost no extra API requests.
+- Added the docker daemon version, operating system and architecture to the instance device itself as `sw_version`, `model` and `hw_version`, plus diagnostic sensors for CPU count and total memory, read from `GET /api/endpoints/{id}/docker/info`. Every field is optional; an endpoint that does not answer still yields a usable device.
 - Added `enable_healthcheck_sensors` option so the per-container health sensor and health problem sensor can be turned off, matching the existing toggles for resource, version, and update sensors.
 - Added `enable_instance_device` option to turn the instance device and its sensor off.
 

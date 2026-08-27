@@ -74,6 +74,18 @@ class PortainerAPI:
             _LOGGER.debug("[PortainerAPI] Endpoint-Info fehlgeschlagen: %s", e)
         return None
 
+    async def get_docker_info(self, endpoint_id):
+        """Return the docker daemon info for an endpoint (version, OS, capacity)."""
+        url = f"{self.base_url}/api/endpoints/{endpoint_id}/docker/info"
+        try:
+            async with self.session.get(url, headers=self.headers, ssl=False) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                _LOGGER.debug("[PortainerAPI] Docker-Info %s: HTTP %s", endpoint_id, resp.status)
+        except Exception as e:
+            _LOGGER.debug("[PortainerAPI] Docker-Info fehlgeschlagen: %s", e)
+        return None
+
     async def get_containers(self, endpoint_id):
         # Prefer modular API if available
         try:
