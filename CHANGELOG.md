@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed the update entity only pulling the image. Installing an update downloaded the new image and left the container running the old one, so pressing install appeared to do nothing. It now calls Portainer's recreate endpoint, which pulls and rebuilds the container from its existing configuration, preserving volumes, networks, labels and restart policy. Containers running with `--rm` and containers pinned to an image digest are refused with an explanation instead of being destroyed or silently doing nothing, matching the cases Portainer's own UI blocks.
 
+- Failures now say what went wrong. Pull and update errors were logged in full but reached the user as "Failed to pull image for plex", so the reason was only visible to someone reading the Home Assistant log. Portainer's and docker's error responses are now parsed into one readable sentence and carried into the update dialog and the notifications, e.g. "Could not update plex: HTTP 409: container is part of a stack" or "Docker refused to pull plex:latest - manifest unknown". Connection failures name the underlying error instead of disappearing into a generic false.
+
 ### Added
 - Added an optional "Delete unused images" button on the instance device, off by default. It prunes only dangling images (unused *and* untagged) and reports how many were removed and how much space was reclaimed. Pruning all unused images would also drop the images of stopped containers, which a button that fires without confirmation should not do.
 

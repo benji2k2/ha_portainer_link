@@ -6,6 +6,7 @@ from homeassistant.components.button import ButtonEntity
 
 from .const import CONF_NOTIFY_SERVICE, DATA_COORDINATOR, DOMAIN
 from .entity import BaseContainerEntity, BaseHubEntity, BaseStackEntity, container_name
+from .portainer_api import PortainerError
 
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
@@ -97,12 +98,16 @@ class PullUpdateButton(ContainerButton):
         self._attr_available = False
         self.async_write_ha_state()
         try:
-            success = await self.coordinator.api.pull_image_update(self.endpoint_id, container_id)
+            try:
+                await self.coordinator.api.pull_image_update(self.endpoint_id, container_id)
+            except PortainerError as err:
+                await self._notify(
+                    "Container Image Pull Failed",
+                    f"Could not pull the image for {self.container_name}: {err}",
+                )
+                return
             await self.coordinator.async_request_refresh()
-            if success:
-                await self._notify("Container Image Pulled", f"Pulled latest image for {self.container_name}")
-            else:
-                await self._notify("Container Image Pull Failed", f"Failed to pull image for {self.container_name}")
+            await self._notify("Container Image Pulled", f"Pulled latest image for {self.container_name}")
         finally:
             self._attr_available = True
             self.async_write_ha_state()
@@ -196,9 +201,10 @@ class PruneImagesButton(BaseHubEntity, ButtonEntity):
         self._attr_available = False
         self.async_write_ha_state()
         try:
-            result = await self.coordinator.api.prune_images(self.endpoint_id, dangling_only=True)
-            if result is None:
-                await self._notify("Image Prune Failed", "Portainer rejected the prune request")
+            try:
+                result = await self.coordinator.api.prune_images(self.endpoint_id, dangling_only=True)
+            except PortainerError as err:
+                await self._notify("Image Prune Failed", f"Portainer rejected the prune request: {err}")
                 return
             deleted = len(result.get("ImagesDeleted") or [])
             reclaimed = _format_bytes(result.get("SpaceReclaimed") or 0)

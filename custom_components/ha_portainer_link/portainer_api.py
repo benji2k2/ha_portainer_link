@@ -9,6 +9,34 @@ from .stack_api import PortainerStackAPI
 
 _LOGGER = logging.getLogger(__name__)
 
+
+class PortainerError(Exception):
+    """An operation failed with a reason worth showing to the user."""
+
+
+def describe_error(status: int, body: str) -> str:
+    """Turn a Portainer or docker error response into one readable sentence.
+
+    Portainer answers with {"message": ..., "details": ...}; the docker proxy
+    passes through {"message": ...}. Anything else is trimmed raw text.
+    """
+    text = (body or "").strip()
+    try:
+        payload = json.loads(text)
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict):
+        parts = [str(payload[key]) for key in ("message", "details") if payload.get(key)]
+        # details often just repeats message
+        seen, unique = set(), []
+        for part in parts:
+            if part not in seen:
+                seen.add(part)
+                unique.append(part)
+        if unique:
+            return f"HTTP {status}: " + " - ".join(unique)
+    return f"HTTP {status}: {text[:200]}" if text else f"HTTP {status}"
+
 class PortainerAPI:
     def __init__(self, host, username=None, password=None, api_key=None, ssl_verify=True):
         self.base_url = host.rstrip("/")
@@ -305,12 +333,12 @@ class PortainerAPI:
             container_info = await self.inspect_container(endpoint_id, container_id)
             if not container_info:
                 _LOGGER.error("No container info found for %s", container_id)
-                return False
+                raise PortainerError("Portainer did not return the container's configuration")
 
             image_name = (container_info.get("Config") or {}).get("Image")
             if not image_name:
                 _LOGGER.error("No image name found for container %s", container_id)
-                return False
+                raise PortainerError("The container reports no image name")
 
             name, tag = self.split_image_reference(image_name)
             _LOGGER.info("Pulling image %s:%s for container %s", name, tag, container_id)
@@ -324,11 +352,9 @@ class PortainerAPI:
                 url, headers=self.headers, params=params, ssl=False, timeout=timeout
             ) as resp:
                 if resp.status != 200:
-                    body = (await resp.text())[:300]
-                    _LOGGER.error(
-                        "Failed to pull %s:%s for %s: HTTP %s %s", name, tag, container_id, resp.status, body
-                    )
-                    return False
+                    reason = describe_error(resp.status, await resp.text())
+                    _LOGGER.error("Failed to pull %s:%s for %s: %s", name, tag, container_id, reason)
+                    raise PortainerError(f"Could not pull {name}:{tag} - {reason}")
 
                 error = None
                 layers = 0
@@ -346,16 +372,19 @@ class PortainerAPI:
                         layers += 1
 
             if error:
-                _LOGGER.error("Pull of %s:%s for %s failed: %s", name, tag, container_id, error)
-                return False
+                detail = error.get("message") if isinstance(error, dict) else error
+                _LOGGER.error("Pull of %s:%s for %s failed: %s", name, tag, container_id, detail)
+                raise PortainerError(f"Docker refused to pull {name}:{tag} - {detail}")
 
             _LOGGER.info(
                 "Pulled %s:%s for container %s (%s progress messages)", name, tag, container_id, layers
             )
             return True
+        except PortainerError:
+            raise
         except Exception as e:
             _LOGGER.exception("Error pulling image update for container %s: %s", container_id, e)
-            return False
+            raise PortainerError(f"Could not reach Portainer while pulling: {e}") from e
 
     async def recreate_container(self, endpoint_id, container_id, pull_image: bool = True):
         """Recreate a container from its existing configuration, pulling first.
@@ -378,13 +407,14 @@ class PortainerAPI:
             ) as resp:
                 if resp.status in (200, 201):
                     return await resp.json()
-                _LOGGER.error(
-                    "Failed to recreate container %s: HTTP %s %s",
-                    container_id, resp.status, (await resp.text())[:300],
-                )
+                reason = describe_error(resp.status, await resp.text())
+                _LOGGER.error("Failed to recreate container %s: %s", container_id, reason)
+                raise PortainerError(reason)
+        except PortainerError:
+            raise
         except Exception as e:
             _LOGGER.exception("Error recreating container %s: %s", container_id, e)
-        return None
+            raise PortainerError(f"Could not reach Portainer: {e}") from e
 
     async def prune_images(self, endpoint_id, dangling_only: bool = True):
         """Delete unused images and return the API result, or None on failure.
@@ -399,10 +429,14 @@ class PortainerAPI:
             async with self.session.post(url, headers=self.headers, params=params, ssl=False) as resp:
                 if resp.status == 200:
                     return await resp.json()
-                _LOGGER.error("Image prune failed: HTTP %s %s", resp.status, (await resp.text())[:300])
+                reason = describe_error(resp.status, await resp.text())
+                _LOGGER.error("Image prune failed: %s", reason)
+                raise PortainerError(reason)
+        except PortainerError:
+            raise
         except Exception as e:
             _LOGGER.exception("Error pruning images: %s", e)
-        return None
+            raise PortainerError(f"Could not reach Portainer: {e}") from e
 
     # ---------------------------
     # Convenience wrappers for image metadata (delegate to self.images)

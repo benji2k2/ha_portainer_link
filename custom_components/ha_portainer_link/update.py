@@ -13,6 +13,7 @@ from homeassistant.helpers.entity import EntityCategory
 
 from .const import DATA_COORDINATOR, DOMAIN
 from .entity import BaseContainerEntity, container_name
+from .portainer_api import PortainerError
 
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
@@ -113,9 +114,10 @@ class ContainerUpdateEntity(BaseContainerEntity, UpdateEntity):
                 f"{self.container_name} is pinned to an image digest, so there is nothing to pull"
             )
 
-        result = await self.coordinator.api.recreate_container(
-            self.endpoint_id, container_id, pull_image=True
-        )
-        if result is None:
-            raise HomeAssistantError(f"Portainer could not recreate {self.container_name}")
+        try:
+            await self.coordinator.api.recreate_container(
+                self.endpoint_id, container_id, pull_image=True
+            )
+        except PortainerError as err:
+            raise HomeAssistantError(f"Could not update {self.container_name}: {err}") from err
         await self.coordinator.async_request_refresh()

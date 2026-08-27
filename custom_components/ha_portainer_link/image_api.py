@@ -236,7 +236,11 @@ class PortainerImageAPI:
         Returning as soon as the status code arrives cancels the pull, since the
         docker API aborts it when the connection closes.
         """
-        return await self.auth.pull_image_update(endpoint_id, container_id)
+        try:
+            return await self.auth.pull_image_update(endpoint_id, container_id)
+        except Exception as err:
+            _LOGGER.error("Pull failed for container %s: %s", container_id, err)
+            return False
 
     async def get_image_info(self, endpoint_id: int, image_id: str) -> dict[str, Any] | None:
         """Get detailed information about a local Docker image."""
