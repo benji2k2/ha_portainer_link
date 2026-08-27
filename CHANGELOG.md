@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-08-27
+
+### Fixed
+- Fixed `enable_prune_button` never appearing in the options form, which made the prune button added in 0.6.2 unreachable. The option key had been inserted as a second positional argument to `vol.Required`, where voluptuous reads it as the error message rather than a schema key. That is valid Python, so it passed a syntax check while silently dropping the option.
+
 ## [0.6.3] - 2026-08-27
 
 ### Fixed

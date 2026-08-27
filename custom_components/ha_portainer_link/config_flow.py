@@ -125,8 +125,11 @@ class PortainerOptionsFlowHandler(config_entries.OptionsFlow):
                     ): bool,
                     vol.Required(
                         CONF_ENABLE_INSTANCE_DEVICE,
-    CONF_ENABLE_PRUNE_BUTTON,
                         default=current[CONF_ENABLE_INSTANCE_DEVICE],
+                    ): bool,
+                    vol.Required(
+                        CONF_ENABLE_PRUNE_BUTTON,
+                        default=current[CONF_ENABLE_PRUNE_BUTTON],
                     ): bool,
                     vol.Required(CONF_VERIFY_SSL, default=current[CONF_VERIFY_SSL]): bool,
                     vol.Optional(CONF_NOTIFY_SERVICE, default=current[CONF_NOTIFY_SERVICE]): str,
