@@ -220,6 +220,9 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                     if image_name:
                         data["image_name"] = image_name
                     if image_id:
+                        # The local image id is available every cycle; only the
+                        # remote counterpart needs a registry window.
+                        data["current_config_digest"] = image_id
                         image_info = await self.api.get_image_info(self.endpoint_id, image_id)
                         if image_info:
                             data["current_version"] = self.api.extract_version_from_image(image_info)
@@ -239,7 +242,6 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                         remote_config = await self.api.get_remote_config_digest(image_name, image_info)
                         if remote_config:
                             data["available_config_digest"] = remote_config
-                            data["current_config_digest"] = image_id
                             update_availability[container_id] = bool(image_id and remote_config != image_id)
                         elif available_digest and not str(available_digest).startswith("unknown"):
                             current_digest = data.get("current_digest")

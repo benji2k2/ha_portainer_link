@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-08-27
+
+### Changed
+- Digest sensors now show the image id rather than the manifest digest. Since 0.6.7 the update decision compares image ids, so showing manifest digests meant the two sensors could differ while the update entity correctly reported nothing to install - the manifest digest moves whenever the manifest list is rewritten, which re-pushed build attestations do without changing a layer. The manifest digest stays available as a `manifest_digest` attribute, since that is the digest an image is pinned with, and the sensors fall back to it when no image id can be resolved.
+
+### Fixed
+- The local image id is now recorded on every update cycle instead of only inside the registry check window, so the current digest sensor is populated straight away rather than after the first registry check.
+
 ## [0.7.0] - 2026-08-27
 
 ### Added

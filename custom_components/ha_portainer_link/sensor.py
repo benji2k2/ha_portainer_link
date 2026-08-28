@@ -195,7 +195,13 @@ class ContainerAvailableVersionSensor(PortainerContainerSensor):
 
 
 class DigestSensor(PortainerContainerSensor):
-    """Digest sensor showing a shortened value, with the full one as attribute."""
+    """Shows the image id, which is what decides whether an update exists.
+
+    The manifest digest moves whenever the manifest list is rewritten - re-pushed
+    build attestations do it without changing a layer - so showing it here would
+    contradict the update state next to it. It stays available as an attribute,
+    since that is the digest you pin an image with.
+    """
 
     icon_name = "mdi:fingerprint"
     digest_key = ""
@@ -203,13 +209,14 @@ class DigestSensor(PortainerContainerSensor):
 
     @property
     def native_value(self):
-        return short_digest(self.image_value(self.digest_key))
+        value = self.image_value(self.config_digest_key) or self.image_value(self.digest_key)
+        return short_digest(value)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {
-            "digest": self.image_value(self.digest_key),
             "image_id": self.image_value(self.config_digest_key),
+            "manifest_digest": self.image_value(self.digest_key),
         }
 
 
