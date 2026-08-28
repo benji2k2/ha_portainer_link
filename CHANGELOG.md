@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-08-27
+
+### Changed
+- The update entity now reports image ids rather than manifest digests, completing the change the digest sensors got in 0.7.1. Installed and available versions fall back to the manifest digest only when no image id can be resolved, and then to the version string. The release summary states the image id transition and reports the manifest digest alongside it, since that digest can move without the image changing.
+
 ## [0.7.2] - 2026-08-27
 
 ### Changed

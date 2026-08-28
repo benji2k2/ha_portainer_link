@@ -50,15 +50,28 @@ class ContainerUpdateEntity(BaseContainerEntity, UpdateEntity):
     def installed_version(self):
         data = self._image_data
         if self.coordinator.get_update_availability(self.current_container_id):
-            return data.get("current_digest") or data.get("current_version")
-        return data.get("current_version") or data.get("current_digest")
+            # An update is decided on image ids, so show those: two containers on
+            # the same tag would otherwise both read "latest" here.
+            return self._identity(data, "current_config_digest", "current_digest") or data.get(
+                "current_version"
+            )
+        return data.get("current_version") or self._identity(
+            data, "current_config_digest", "current_digest"
+        )
 
     @property
     def latest_version(self):
         data = self._image_data
         if self.coordinator.get_update_availability(self.current_container_id):
-            return data.get("available_digest") or data.get("available_version")
+            return self._identity(data, "available_config_digest", "available_digest") or data.get(
+                "available_version"
+            )
         return self.installed_version
+
+    @staticmethod
+    def _identity(data: dict, config_key: str, manifest_key: str) -> str | None:
+        """Short image id, falling back to the manifest digest when unresolved."""
+        return short_digest(data.get(config_key) or data.get(manifest_key))
 
     @property
     def in_progress(self) -> bool:
@@ -67,12 +80,26 @@ class ContainerUpdateEntity(BaseContainerEntity, UpdateEntity):
     @property
     def release_summary(self):
         data = self._image_data
+        current = data.get("current_config_digest")
+        available = data.get("available_config_digest")
+        if current and available:
+            summary = (
+                f"Image id {short_digest(current)} -> {short_digest(available)}"
+                if current != available
+                else f"Image id {short_digest(current)}, unchanged"
+            )
+            manifest = data.get("available_digest")
+            if manifest:
+                # The manifest digest can move without the image changing, so it
+                # is reported alongside rather than as the deciding value.
+                summary += f". Manifest digest {short_digest(manifest)}"
+            return summary
         current_digest = data.get("current_digest")
         available_digest = data.get("available_digest")
         if current_digest and available_digest:
             return (
-                f"Current digest: {short_digest(current_digest)};"
-                f" available digest: {short_digest(available_digest)}"
+                f"Manifest digest: {short_digest(current_digest)}"
+                f" -> {short_digest(available_digest)}"
             )
         return None
 
