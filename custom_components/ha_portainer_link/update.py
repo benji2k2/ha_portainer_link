@@ -12,7 +12,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import EntityCategory
 
 from .const import DATA_COORDINATOR, DOMAIN
-from .entity import BaseContainerEntity, container_name, short_digest
+from .entity import BaseContainerEntity, container_name, parse_docker_time, short_digest
 from .portainer_api import PortainerError
 
 
@@ -102,6 +102,17 @@ class ContainerUpdateEntity(BaseContainerEntity, UpdateEntity):
                 f" -> {short_digest(available_digest)}"
             )
         return None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Build dates for the running and the available image."""
+        data = self._image_data
+        installed = parse_docker_time(data.get("image_created"))
+        available = parse_docker_time(data.get("available_image_created"))
+        return {
+            "installed_image_built": installed.isoformat() if installed else None,
+            "available_image_built": available.isoformat() if available else None,
+        }
 
     @property
     def _image_data(self) -> dict:

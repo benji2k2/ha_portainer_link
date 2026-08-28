@@ -544,6 +544,12 @@ class PortainerAPI:
         except Exception:
             return "unknown"
 
+    async def get_remote_created(self, image_name, local_image=None):
+        """Return the remote image build date, or None."""
+        if self.images:
+            return await self.images.get_remote_created(image_name, local_image)
+        return None
+
     async def get_remote_config_digest(self, image_name, local_image=None):
         """Return the remote image config digest (docker's image id) or None."""
         if self.images:

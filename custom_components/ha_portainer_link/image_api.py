@@ -240,6 +240,44 @@ class PortainerImageAPI:
             _LOGGER.debug("Failed to fetch remote config digest for %s: %s", image_name, err)
             return None
 
+    async def get_remote_created(
+        self, image_name: str, local_image: dict[str, Any] | None = None
+    ) -> str | None:
+        """Return when the remote image was built, from its config blob.
+
+        This costs one request beyond resolving the config digest, so callers
+        should ask only when an update actually exists rather than for every
+        container on every cycle.
+        """
+        try:
+            registry, repository, reference, _pinned = self._parse_image_ref(image_name)
+            if not repository or reference == "unknown":
+                return None
+            document = await self._registry_get_json(
+                f"https://{registry}/v2/{repository}/manifests/{reference}"
+            )
+            if not document:
+                return None
+            if document.get("manifests"):
+                child = self._select_platform_manifest(document, local_image)
+                if not child:
+                    return None
+                document = await self._registry_get_json(
+                    f"https://{registry}/v2/{repository}/manifests/{child}"
+                )
+                if not document:
+                    return None
+            config_digest = (document.get("config") or {}).get("digest")
+            if not config_digest:
+                return None
+            blob = await self._registry_get_json(
+                f"https://{registry}/v2/{repository}/blobs/{config_digest}"
+            )
+            return (blob or {}).get("created")
+        except Exception as err:
+            _LOGGER.debug("Failed to fetch remote build date for %s: %s", image_name, err)
+            return None
+
     async def _get_remote_manifest_digests(self, image_name: str) -> tuple[str | None, set[str]]:
         """Return primary remote digest and all manifest-list child digests."""
         try:

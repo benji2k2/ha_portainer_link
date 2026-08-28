@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-27
+
+### Added
+- Added an "Image Built" timestamp sensor per container, reporting when the running image was built. Home Assistant renders it relatively, so how stale a container is becomes readable at a glance - something the version sensors cannot show, since a rolling tag reads "latest" no matter how old the image behind it is. It comes from image data the coordinator already fetches and costs no extra requests. Gated by the existing version sensors option.
+- The build date of an available update is exposed as an attribute on that sensor and on the update entity. It needs the remote config blob, so it is fetched only when an update actually exists rather than for every container on every cycle.
+
 ## [0.7.3] - 2026-08-27
 
 ### Changed

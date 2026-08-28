@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import re
 from typing import Any
 from urllib.parse import urlparse
@@ -81,6 +82,26 @@ def format_bytes(value: int) -> str:
             return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
         size /= 1024
     return f"{size:.1f} GB"
+
+
+def parse_docker_time(value: Any) -> dt.datetime | None:
+    """Parse a docker timestamp into an aware datetime.
+
+    Docker reports nanoseconds, which fromisoformat rejects - it accepts at most
+    microseconds - so the fractional part is truncated to six digits. The zero
+    value docker uses for "never" is treated as absent.
+    """
+    if not value:
+        return None
+    text = str(value).strip()
+    if text.startswith("0001-"):
+        return None
+    text = re.sub(r"(\.\d{6})\d+", r"\1", text)
+    try:
+        parsed = dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.timezone.utc)
 
 
 def short_digest(value: str | None, length: int = 12) -> str | None:

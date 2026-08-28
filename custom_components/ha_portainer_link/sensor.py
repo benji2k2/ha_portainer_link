@@ -15,6 +15,7 @@ from .entity import (
     container_health,
     container_name,
     is_container_running,
+    parse_docker_time,
     short_digest,
 )
 
@@ -58,6 +59,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         if coordinator.is_version_sensors_enabled():
             entities.extend(
                 [
+                    ContainerImageCreatedSensor(coordinator, entry.entry_id, container_id, name, stack_info),
                     ContainerCurrentVersionSensor(coordinator, entry.entry_id, container_id, name, stack_info),
                     ContainerAvailableVersionSensor(coordinator, entry.entry_id, container_id, name, stack_info),
                     ContainerCurrentDigestSensor(coordinator, entry.entry_id, container_id, name, stack_info),
@@ -172,6 +174,28 @@ class ContainerImageSensor(PortainerContainerSensor):
         if not container:
             return None
         return self.image_value("image_name") or container.get("Image")
+
+
+class ContainerImageCreatedSensor(PortainerContainerSensor):
+    """When the running image was built.
+
+    Says how stale a container is at a glance, which the version sensors cannot:
+    a rolling tag reads "latest" no matter how old the image behind it is.
+    """
+
+    entity_suffix = "image_created"
+    label = "Image Built"
+    icon_name = "mdi:calendar-clock"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    @property
+    def native_value(self):
+        return parse_docker_time(self.image_value("image_created"))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        available = parse_docker_time(self.image_value("available_image_created"))
+        return {"available_image_built": available.isoformat() if available else None}
 
 
 class ContainerCurrentVersionSensor(PortainerContainerSensor):

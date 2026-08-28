@@ -226,6 +226,7 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                         image_info = await self.api.get_image_info(self.endpoint_id, image_id)
                         if image_info:
                             data["current_version"] = self.api.extract_version_from_image(image_info)
+                            data["image_created"] = image_info.get("Created")
                         current_digest = await self.api.get_current_digest(self.endpoint_id, container_id)
                         if current_digest:
                             data["current_digest"] = current_digest
@@ -242,6 +243,12 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                         remote_config = await self.api.get_remote_config_digest(image_name, image_info)
                         if remote_config:
                             data["available_config_digest"] = remote_config
+                            if image_id and remote_config != image_id:
+                                # One extra blob request, and only when there is
+                                # actually something new to describe.
+                                data["available_image_created"] = await self.api.get_remote_created(
+                                    image_name, image_info
+                                )
                             update_availability[container_id] = bool(image_id and remote_config != image_id)
                         elif available_digest and not str(available_digest).startswith("unknown"):
                             current_digest = data.get("current_digest")
