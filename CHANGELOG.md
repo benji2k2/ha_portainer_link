@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.7] - 2026-08-27
+
+### Fixed
+- Fixed updates being offered when nothing had actually changed. Update detection compared the manifest index digest, which moves whenever anything in the manifest list is rewritten - re-pushed build attestations do it without touching a single layer. Installing then pulled an identical image, so no new image appeared and the container was recreated for nothing. Detection now compares the image config digest, which is the image id docker assigns and only changes when the image really does. This is what `docker pull` and Watchtower effectively compare, which is why they stayed quiet in the same situation. Resolving it costs one extra registry request per image and no layer downloads; attestation entries in an index carry the platform `unknown/unknown` and are skipped when picking the platform manifest. The manifest digests remain available as sensors, now purely informational, and the previous comparison still serves as a fallback where a config digest cannot be resolved.
+
 ## [0.6.6] - 2026-08-27
 
 ### Fixed

@@ -532,6 +532,12 @@ class PortainerAPI:
         except Exception:
             return "unknown"
 
+    async def get_remote_config_digest(self, image_name, local_image=None):
+        """Return the remote image config digest (docker's image id) or None."""
+        if self.images:
+            return await self.images.get_remote_config_digest(image_name, local_image)
+        return None
+
     async def get_available_digest(self, endpoint_id, container_id):
         try:
             if hasattr(self, "images") and self.images:

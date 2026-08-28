@@ -213,6 +213,7 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                     info = await self.api.inspect_container(self.endpoint_id, container_id)
                     image_name = ((info or {}).get("Config") or {}).get("Image")
                     image_id = (info or {}).get("Image")
+                    image_info = None
                     if image_name:
                         data["image_name"] = image_name
                     if image_id:
@@ -226,6 +227,18 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                         available_digest = await self.api.get_available_digest(self.endpoint_id, container_id)
                         if available_digest and not str(available_digest).startswith("unknown"):
                             data["available_digest"] = available_digest
+
+                        # The manifest digest moves whenever the index is
+                        # rewritten - re-pushed build attestations do it without
+                        # changing a single layer. The config digest is the image
+                        # id docker itself compares, so it decides here and the
+                        # manifest digests stay purely informational.
+                        remote_config = await self.api.get_remote_config_digest(image_name, image_info)
+                        if remote_config:
+                            data["available_config_digest"] = remote_config
+                            data["current_config_digest"] = image_id
+                            update_availability[container_id] = bool(image_id and remote_config != image_id)
+                        elif available_digest and not str(available_digest).startswith("unknown"):
                             current_digest = data.get("current_digest")
                             update_availability[container_id] = bool(
                                 current_digest

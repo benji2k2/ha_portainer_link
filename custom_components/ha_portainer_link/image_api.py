@@ -151,6 +151,95 @@ class PortainerImageAPI:
                 digests.add(digest)
         return digests
 
+    async def _registry_get_json(self, url: str) -> dict[str, Any] | None:
+        """GET a registry document, performing the 401 -> token -> retry dance."""
+        headers = self._accept_headers()
+        resp = await self._request("GET", url, headers=headers)
+        async with resp:
+            if resp.status == 200:
+                return await resp.json(content_type=None)
+            if resp.status != 401:
+                _LOGGER.debug("Registry request failed for %s: HTTP %s", url, resp.status)
+                return None
+            token = await self._get_registry_auth_token(
+                resp.headers.get("WWW-Authenticate") or resp.headers.get("Www-Authenticate")
+            )
+        if not token:
+            return None
+        auth_headers = dict(headers)
+        auth_headers["Authorization"] = f"Bearer {token}"
+        resp = await self._request("GET", url, headers=auth_headers)
+        async with resp:
+            if resp.status == 200:
+                return await resp.json(content_type=None)
+            _LOGGER.debug("Authenticated registry request failed for %s: HTTP %s", url, resp.status)
+        return None
+
+    @staticmethod
+    def _select_platform_manifest(index: dict[str, Any], local_image: dict[str, Any] | None) -> str | None:
+        """Pick the manifest matching the local image's platform from an index.
+
+        Attestation entries carry platform "unknown/unknown" and are skipped:
+        they are exactly what gets rewritten without the image changing.
+        """
+        local = local_image or {}
+        want_os = (local.get("Os") or "linux").lower()
+        want_arch = (local.get("Architecture") or "").lower()
+        want_variant = (local.get("Variant") or "").lower()
+
+        candidates = []
+        for manifest in index.get("manifests") or []:
+            platform = manifest.get("platform") or {}
+            p_os = str(platform.get("os") or "").lower()
+            p_arch = str(platform.get("architecture") or "").lower()
+            if p_os in ("", "unknown") or p_arch in ("", "unknown"):
+                continue
+            candidates.append((p_os, p_arch, str(platform.get("variant") or "").lower(), manifest.get("digest")))
+
+        if not candidates:
+            return None
+        for p_os, p_arch, p_variant, digest in candidates:
+            if p_os == want_os and p_arch == want_arch and (not want_variant or p_variant == want_variant):
+                return digest
+        for p_os, p_arch, _variant, digest in candidates:
+            if p_os == want_os and p_arch == want_arch:
+                return digest
+        return None
+
+    async def get_remote_config_digest(
+        self, image_name: str, local_image: dict[str, Any] | None = None
+    ) -> str | None:
+        """Return the remote image config digest, which is docker's image id.
+
+        The manifest (index) digest moves whenever anything in the list is
+        rewritten - re-pushed build attestations do it without touching a single
+        layer - so comparing it reports updates that ship no new software. The
+        config digest only changes when the image itself does, which is what
+        docker compares locally.
+        """
+        try:
+            registry, repository, reference, _pinned = self._parse_image_ref(image_name)
+            if not repository or reference == "unknown":
+                return None
+            document = await self._registry_get_json(
+                f"https://{registry}/v2/{repository}/manifests/{reference}"
+            )
+            if not document:
+                return None
+            if document.get("manifests"):
+                child = self._select_platform_manifest(document, local_image)
+                if not child:
+                    return None
+                document = await self._registry_get_json(
+                    f"https://{registry}/v2/{repository}/manifests/{child}"
+                )
+                if not document:
+                    return None
+            return self._normalize_digest((document.get("config") or {}).get("digest"))
+        except Exception as err:
+            _LOGGER.debug("Failed to fetch remote config digest for %s: %s", image_name, err)
+            return None
+
     async def _get_remote_manifest_digests(self, image_name: str) -> tuple[str | None, set[str]]:
         """Return primary remote digest and all manifest-list child digests."""
         try:
