@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity
+from homeassistant.util import dt as dt_util
 
 from .const import CONF_NOTIFY_SERVICE, DATA_COORDINATOR, DOMAIN
 from .entity import (
@@ -65,15 +66,51 @@ async def _send_notification(hass, coordinator, title: str, message: str) -> Non
     )
 
 
-class ContainerButton(BaseContainerEntity, ButtonEntity):
+class ButtonResultMixin:
+    """Report an outcome on the entity, and notify only when it failed.
+
+    A button entity cannot hand anything back to the frontend, so the result of
+    a press lands in attributes where a dashboard card shows it straight away.
+    Notifications are kept for failures, which are the only outcome worth
+    interrupting someone over.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._last_result: dict[str, Any] = {}
+
+    @property
+    def result_attributes(self) -> dict[str, Any]:
+        return dict(self._last_result)
+
+    def _record(self, message: str, **extra: Any) -> None:
+        """Store the outcome on the entity without notifying."""
+        self._last_result = {
+            "last_result": message,
+            "last_run": dt_util.now().isoformat(timespec="seconds"),
+            **extra,
+        }
+        self.async_write_ha_state()
+
+    async def _fail(self, title: str, message: str, **extra: Any) -> None:
+        """Store a failure and raise a notification for it."""
+        self._record(message, last_result_ok=False, **extra)
+        await _send_notification(self.hass, self.coordinator, title, message)
+
+    def _succeed(self, message: str, **extra: Any) -> None:
+        self._record(message, last_result_ok=True, **extra)
+
+
+class ContainerButton(ButtonResultMixin, BaseContainerEntity, ButtonEntity):
     """Base class for container buttons."""
 
     def __init__(self, coordinator, entry_id, container_id, name, stack_info) -> None:
         super().__init__(coordinator, entry_id, container_id, name, stack_info)
         self._attr_name = self.label
 
-    async def _notify(self, title: str, message: str) -> None:
-        await _send_notification(self.hass, self.coordinator, title, message)
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self.result_attributes
 
 
 class RestartContainerButton(ContainerButton):
@@ -89,8 +126,10 @@ class RestartContainerButton(ContainerButton):
             return
         success = await self.coordinator.api.restart_container(self.endpoint_id, container_id)
         await self.coordinator.async_request_refresh()
-        if not success:
-            await self._notify("Container Restart Failed", f"Failed to restart {self.container_name}")
+        if success:
+            self._succeed(f"Restarted {self.container_name}")
+        else:
+            await self._fail("Container Restart Failed", f"Failed to restart {self.container_name}")
 
 
 class PullUpdateButton(ContainerButton):
@@ -110,27 +149,28 @@ class PullUpdateButton(ContainerButton):
             try:
                 await self.coordinator.api.pull_image_update(self.endpoint_id, container_id)
             except PortainerError as err:
-                await self._notify(
+                await self._fail(
                     "Container Image Pull Failed",
                     f"Could not pull the image for {self.container_name}: {err}",
                 )
                 return
             await self.coordinator.async_request_refresh()
-            await self._notify("Container Image Pulled", f"Pulled latest image for {self.container_name}")
+            self._succeed(f"Pulled the latest image for {self.container_name}")
         finally:
             self._attr_available = True
             self.async_write_ha_state()
 
 
-class StackButton(BaseStackEntity, ButtonEntity):
+class StackButton(ButtonResultMixin, BaseStackEntity, ButtonEntity):
     """Base class for stack buttons."""
 
     def __init__(self, coordinator, entry_id, stack_name) -> None:
         super().__init__(coordinator, entry_id, stack_name)
         self._attr_name = self.label
 
-    async def _notify(self, title: str, message: str) -> None:
-        await _send_notification(self.hass, self.coordinator, title, message)
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self.result_attributes
 
 
 class StackStartButton(StackButton):
@@ -143,8 +183,10 @@ class StackStartButton(StackButton):
     async def async_press(self) -> None:
         success = await self.coordinator.api.start_stack(self.endpoint_id, self.stack_name)
         await self.coordinator.async_request_refresh()
-        if not success:
-            await self._notify("Stack Start Failed", f"Failed to start stack {self.stack_name}")
+        if success:
+            self._succeed(f"Started stack {self.stack_name}")
+        else:
+            await self._fail("Stack Start Failed", f"Failed to start stack {self.stack_name}")
 
 
 class StackStopButton(StackButton):
@@ -157,8 +199,10 @@ class StackStopButton(StackButton):
     async def async_press(self) -> None:
         success = await self.coordinator.api.stop_stack(self.endpoint_id, self.stack_name)
         await self.coordinator.async_request_refresh()
-        if not success:
-            await self._notify("Stack Stop Failed", f"Failed to stop stack {self.stack_name}")
+        if success:
+            self._succeed(f"Stopped stack {self.stack_name}")
+        else:
+            await self._fail("Stack Stop Failed", f"Failed to stop stack {self.stack_name}")
 
 
 class StackUpdateButton(StackButton):
@@ -176,14 +220,14 @@ class StackUpdateButton(StackButton):
         else:
             success = bool(result)
         if success:
-            await self._notify("Stack Updated", f"Updated stack {self.stack_name}")
+            self._succeed(f"Updated stack {self.stack_name}")
         else:
-            await self._notify("Stack Update Failed", f"Failed to update stack {self.stack_name}")
+            await self._fail("Stack Update Failed", f"Failed to update stack {self.stack_name}")
 
 
 
 
-class PruneImagesButton(BaseHubEntity, ButtonEntity):
+class PruneImagesButton(ButtonResultMixin, BaseHubEntity, ButtonEntity):
     """Delete unused images on this Portainer environment.
 
     Defaults to dangling images only: unused *and* untagged. The prune_all_unused
@@ -196,10 +240,6 @@ class PruneImagesButton(BaseHubEntity, ButtonEntity):
     _attr_name = "Delete unused images"
     _attr_icon = "mdi:broom"
 
-    def __init__(self, coordinator, entry_id: str) -> None:
-        super().__init__(coordinator, entry_id)
-        self._last_result: dict[str, Any] = {}
-
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Expose the last outcome, so a dashboard shows it without a notification."""
@@ -208,11 +248,8 @@ class PruneImagesButton(BaseHubEntity, ButtonEntity):
             if self.coordinator.is_prune_all_unused()
             else "dangling images only",
             "deletable_now": len(self.coordinator.prunable_images()),
-            **self._last_result,
+            **self.result_attributes,
         }
-
-    async def _notify(self, title: str, message: str) -> None:
-        await _send_notification(self.hass, self.coordinator, title, message)
 
     async def async_press(self) -> None:
         all_unused = self.coordinator.is_prune_all_unused()
@@ -222,9 +259,9 @@ class PruneImagesButton(BaseHubEntity, ButtonEntity):
                 self.coordinator.endpoint_id, dangling_only=not all_unused
             )
         except PortainerError as err:
-            self._last_result = {"last_result": f"failed: {err}"}
-            self.async_write_ha_state()
-            await self._notify("Image Prune Failed", f"Portainer rejected the prune request: {err}")
+            await self._fail(
+                "Image Prune Failed", f"Portainer rejected the prune request: {err}"
+            )
             return
 
         deleted, untagged = count_pruned(result or {})
@@ -257,13 +294,11 @@ class PruneImagesButton(BaseHubEntity, ButtonEntity):
                 " another image or container still depends on"
             )
 
-        self._last_result = {
-            "last_result": summary,
-            "last_images_deleted": deleted,
-            "last_tags_dropped": untagged,
-            "last_space_reclaimed": reclaimed,
-            "deletable_before": before,
-            "deletable_after": len(remaining),
-        }
-        self.async_write_ha_state()
-        await self._notify("Unused Images Deleted", f"{summary}.")
+        self._succeed(
+            summary,
+            last_images_deleted=deleted,
+            last_tags_dropped=untagged,
+            last_space_reclaimed=reclaimed,
+            deletable_before=before,
+            deletable_after=len(remaining),
+        )

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-08-27
+
+### Changed
+- Buttons no longer send a notification when they succeed. Every button now records its outcome on itself - `last_result`, `last_run` and a `last_result_ok` flag, plus the counts for a prune - so a dashboard card shows what happened the moment the press finishes. Notifications are kept for failures, which are the only outcome worth interrupting someone over, and still carry the reason Portainer gave. Restart, pull, the three stack buttons and prune all behave the same way.
+
 ## [0.7.1] - 2026-08-27
 
 ### Changed
