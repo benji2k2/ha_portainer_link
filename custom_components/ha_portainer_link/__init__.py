@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from .const import (
@@ -22,6 +22,8 @@ from .const import (
 )
 from .coordinator import PortainerDataUpdateCoordinator
 from .entity import (
+    count_pruned,
+    format_bytes,
     container_device_id,
     container_name,
     container_unique_id,
@@ -120,14 +122,68 @@ def _register_services(hass: HomeAssistant) -> None:
             if isinstance(entry_data, dict) and (coordinator := entry_data.get(DATA_COORDINATOR)):
                 await coordinator.async_request_refresh()
 
+    async def handle_prune_images(call: ServiceCall) -> dict:
+        """Prune images and return the outcome to the caller.
+
+        A button entity cannot report anything back to the frontend, so this
+        service exists for anyone who wants the result in front of them the
+        moment the action finishes instead of in a notification.
+        """
+        results = []
+        for entry in hass.config_entries.async_entries(DOMAIN):
+            data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+            if not isinstance(data, dict):
+                continue
+            coordinator = data.get(DATA_COORDINATOR)
+            if coordinator is None:
+                continue
+            all_unused = call.data.get("all_unused", coordinator.is_prune_all_unused())
+            before = coordinator.prunable_images()
+            outcome = {
+                "environment": coordinator.endpoint_name or entry.title,
+                "scope": "all unused images" if all_unused else "dangling images only",
+                "deletable_before": len(before),
+            }
+            try:
+                result = await coordinator.api.prune_images(
+                    coordinator.endpoint_id, dangling_only=not all_unused
+                )
+            except Exception as err:
+                outcome["error"] = str(err)
+                results.append(outcome)
+                continue
+
+            deleted, untagged = count_pruned(result or {})
+            reclaimed = int((result or {}).get("SpaceReclaimed") or 0)
+            await coordinator.async_refresh()
+            remaining = coordinator.prunable_images()
+            outcome.update(
+                {
+                    "images_deleted": deleted,
+                    "tags_dropped": untagged,
+                    "space_reclaimed": format_bytes(reclaimed),
+                    "space_reclaimed_bytes": reclaimed,
+                    "deletable_after": len(remaining),
+                    "still_deletable": [
+                        ", ".join(i.get("RepoTags") or []) or str(i.get("Id", ""))[:19]
+                        for i in remaining
+                    ][:20],
+                }
+            )
+            results.append(outcome)
+        return {"results": results}
+
     hass.services.async_register(DOMAIN, "reload", handle_reload)
     hass.services.async_register(DOMAIN, "refresh", handle_refresh)
+    hass.services.async_register(
+        DOMAIN, "prune_images", handle_prune_images, supports_response=SupportsResponse.OPTIONAL
+    )
     hass.data[DOMAIN]["_services_registered"] = True
 
 
 def _unregister_services(hass: HomeAssistant) -> None:
     """Unregister integration services."""
-    for service in ("reload", "refresh"):
+    for service in ("reload", "refresh", "prune_images"):
         if hass.services.has_service(DOMAIN, service):
             hass.services.async_remove(DOMAIN, service)
     hass.data.setdefault(DOMAIN, {})["_services_registered"] = False

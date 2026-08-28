@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-27
+
+### Added
+- Added a "Deletable images" sensor on the instance device, counting what the prune button would actually remove in its configured scope. Attributes list the images by name, split them into dangling and tagged-but-unused, and report the reclaimable size along with how many images exist and how many are in use.
+- Added a `prune_images` action that returns its result to the caller instead of sending a notification, for anyone who wants the outcome in front of them when the action finishes. It reports the scope, how many images and tag references went, the space reclaimed, and what is still deletable afterwards. Takes an optional `all_unused` flag that overrides the configured scope for a single run.
+- The prune button now exposes its last outcome as attributes, so a dashboard can show what happened without relying on notifications.
+
+### Changed
+- Digest sensors now show a shortened digest (12 characters, no algorithm prefix) instead of 71 characters of hex. The full value moves to a `digest` attribute, and the update comparison keeps using the full digest internally. The update entity's release summary is shortened the same way.
+- The prune button explains when images remain deletable after a prune: docker keeps any image another image or container still depends on, so a shared base layer can survive a prune that removed everything built on it.
+
 ## [0.6.7] - 2026-08-27
 
 ### Fixed

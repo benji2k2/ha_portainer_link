@@ -12,7 +12,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import EntityCategory
 
 from .const import DATA_COORDINATOR, DOMAIN
-from .entity import BaseContainerEntity, container_name
+from .entity import BaseContainerEntity, container_name, short_digest
 from .portainer_api import PortainerError
 
 
@@ -70,7 +70,10 @@ class ContainerUpdateEntity(BaseContainerEntity, UpdateEntity):
         current_digest = data.get("current_digest")
         available_digest = data.get("available_digest")
         if current_digest and available_digest:
-            return f"Current digest: {current_digest}; available digest: {available_digest}"
+            return (
+                f"Current digest: {short_digest(current_digest)};"
+                f" available digest: {short_digest(available_digest)}"
+            )
         return None
 
     @property

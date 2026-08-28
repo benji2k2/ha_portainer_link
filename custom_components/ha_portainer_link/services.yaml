@@ -8,3 +8,21 @@ refresh:
   description: "Force refresh container data for all Portainer integrations"
   fields: {}
 
+
+prune_images:
+  name: "Delete unused images"
+  description: >-
+    Remove unused images on every configured Portainer environment and return
+    what happened. Unlike the button, this reports its result directly to the
+    caller instead of sending a notification.
+  fields:
+    all_unused:
+      name: "All unused images"
+      description: >-
+        Remove every unused image instead of only dangling ones. Tagged images
+        that no container uses are included. Defaults to the integration's
+        prune_all_unused option.
+      required: false
+      example: true
+      selector:
+        boolean:

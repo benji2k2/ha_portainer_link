@@ -416,6 +416,18 @@ class PortainerAPI:
             _LOGGER.exception("Error recreating container %s: %s", container_id, e)
             raise PortainerError(f"Could not reach Portainer: {e}") from e
 
+    async def get_images(self, endpoint_id):
+        """Return the local image list for an endpoint, or None on failure."""
+        url = f"{self.base_url}/api/endpoints/{endpoint_id}/docker/images/json"
+        try:
+            async with self.session.get(url, headers=self.headers, ssl=False) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                _LOGGER.debug("Image list failed: HTTP %s", resp.status)
+        except Exception as e:
+            _LOGGER.debug("Error listing images: %s", e)
+        return None
+
     async def prune_images(self, endpoint_id, dangling_only: bool = True):
         """Delete unused images and return the API result, or None on failure.
 

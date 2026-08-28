@@ -15,6 +15,7 @@ from .entity import (
     container_health,
     container_name,
     is_container_running,
+    short_digest,
 )
 
 
@@ -31,6 +32,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 InstanceStoppedContainersSensor(coordinator, entry.entry_id),
                 InstanceUnhealthyContainersSensor(coordinator, entry.entry_id),
                 InstanceStacksSensor(coordinator, entry.entry_id),
+                InstanceReclaimableImagesSensor(coordinator, entry.entry_id),
                 InstanceProcessorsSensor(coordinator, entry.entry_id),
                 InstanceMemorySensor(coordinator, entry.entry_id),
             ]
@@ -192,24 +194,37 @@ class ContainerAvailableVersionSensor(PortainerContainerSensor):
         return self.image_value("available_version")
 
 
-class ContainerCurrentDigestSensor(PortainerContainerSensor):
+class DigestSensor(PortainerContainerSensor):
+    """Digest sensor showing a shortened value, with the full one as attribute."""
+
+    icon_name = "mdi:fingerprint"
+    digest_key = ""
+    config_digest_key = ""
+
+    @property
+    def native_value(self):
+        return short_digest(self.image_value(self.digest_key))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {
+            "digest": self.image_value(self.digest_key),
+            "image_id": self.image_value(self.config_digest_key),
+        }
+
+
+class ContainerCurrentDigestSensor(DigestSensor):
     entity_suffix = "current_digest"
     label = "Current Digest"
-    icon_name = "mdi:fingerprint"
-
-    @property
-    def native_value(self):
-        return self.image_value("current_digest")
+    digest_key = "current_digest"
+    config_digest_key = "current_config_digest"
 
 
-class ContainerAvailableDigestSensor(PortainerContainerSensor):
+class ContainerAvailableDigestSensor(DigestSensor):
     entity_suffix = "available_digest"
     label = "Available Digest"
-    icon_name = "mdi:fingerprint"
-
-    @property
-    def native_value(self):
-        return self.image_value("available_digest")
+    digest_key = "available_digest"
+    config_digest_key = "available_config_digest"
 
 
 class InstanceUnhealthyContainersSensor(BaseHubEntity, SensorEntity):
@@ -332,3 +347,45 @@ class InstanceMemorySensor(BaseHubEntity, SensorEntity):
         if not isinstance(total, (int, float)):
             return None
         return round(total / (1024 ** 3), 2)
+
+
+def _image_label(image: dict[str, Any]) -> str:
+    """Name an image for display: its tags, or a short id when untagged."""
+    tags = [t for t in (image.get("RepoTags") or []) if t and t != "<none>:<none>"]
+    if tags:
+        return ", ".join(tags)
+    return f"<none> ({short_digest(image.get('Id'))})"
+
+
+class InstanceReclaimableImagesSensor(BaseHubEntity, SensorEntity):
+    """How many images the prune button would remove right now.
+
+    Follows the button's configured scope, and excludes images a container still
+    references, since docker refuses to remove those.
+    """
+
+    entity_suffix = "reclaimable_images"
+    _attr_name = "Deletable images"
+    _attr_icon = "mdi:image-off-outline"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> int:
+        return len(self.coordinator.prunable_images())
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        prunable = self.coordinator.prunable_images()
+        total = sum(int(image.get("Size") or 0) for image in prunable)
+        dangling = sum(1 for image in prunable if self.coordinator._is_dangling(image))
+        return {
+            "scope": "all unused images"
+            if self.coordinator.is_prune_all_unused()
+            else "dangling images only",
+            "reclaimable_bytes": total,
+            "dangling": dangling,
+            "tagged_but_unused": len(prunable) - dangling,
+            "images": [_image_label(image) for image in prunable][:50],
+            "images_total": len(self.coordinator.images),
+            "images_in_use": len(self.coordinator._used_image_ids()),
+        }

@@ -2,10 +2,19 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.components.button import ButtonEntity
 
 from .const import CONF_NOTIFY_SERVICE, DATA_COORDINATOR, DOMAIN
-from .entity import BaseContainerEntity, BaseHubEntity, BaseStackEntity, container_name
+from .entity import (
+    BaseContainerEntity,
+    BaseHubEntity,
+    BaseStackEntity,
+    container_name,
+    count_pruned,
+    format_bytes,
+)
 from .portainer_api import PortainerError
 
 
@@ -172,28 +181,6 @@ class StackUpdateButton(StackButton):
             await self._notify("Stack Update Failed", f"Failed to update stack {self.stack_name}")
 
 
-def _count_pruned(result: dict) -> tuple[int, int]:
-    """Return (images deleted, tag references dropped) from a prune response.
-
-    ImagesDeleted is not one entry per image: the daemon reports each removed
-    tag as its own "Untagged" item and each removed image id as a "Deleted" one,
-    so a single image commonly yields three entries. Counting the list length
-    overstates what happened.
-    """
-    items = result.get("ImagesDeleted") or []
-    deleted = sum(1 for item in items if isinstance(item, dict) and item.get("Deleted"))
-    untagged = sum(1 for item in items if isinstance(item, dict) and item.get("Untagged"))
-    return deleted, untagged
-
-
-def _format_bytes(value: int) -> str:
-    """Return a compact human-readable size."""
-    size = float(value or 0)
-    for unit in ("B", "KB", "MB", "GB"):
-        if size < 1024 or unit == "GB":
-            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
-        size /= 1024
-    return f"{size:.1f} GB"
 
 
 class PruneImagesButton(BaseHubEntity, ButtonEntity):
@@ -209,50 +196,74 @@ class PruneImagesButton(BaseHubEntity, ButtonEntity):
     _attr_name = "Delete unused images"
     _attr_icon = "mdi:broom"
 
+    def __init__(self, coordinator, entry_id: str) -> None:
+        super().__init__(coordinator, entry_id)
+        self._last_result: dict[str, Any] = {}
+
     @property
-    def extra_state_attributes(self) -> dict[str, str]:
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Expose the last outcome, so a dashboard shows it without a notification."""
         return {
             "scope": "all unused images"
             if self.coordinator.is_prune_all_unused()
-            else "dangling images only"
+            else "dangling images only",
+            "deletable_now": len(self.coordinator.prunable_images()),
+            **self._last_result,
         }
 
     async def _notify(self, title: str, message: str) -> None:
         await _send_notification(self.hass, self.coordinator, title, message)
 
     async def async_press(self) -> None:
-        self._attr_available = False
-        self.async_write_ha_state()
+        all_unused = self.coordinator.is_prune_all_unused()
+        before = len(self.coordinator.prunable_images())
         try:
-            all_unused = self.coordinator.is_prune_all_unused()
-            try:
-                result = await self.coordinator.api.prune_images(
-                    self.endpoint_id, dangling_only=not all_unused
-                )
-            except PortainerError as err:
-                await self._notify("Image Prune Failed", f"Portainer rejected the prune request: {err}")
-                return
-            deleted, untagged = _count_pruned(result)
-            reclaimed = _format_bytes(result.get("SpaceReclaimed") or 0)
-            scope = "unused" if all_unused else "dangling"
-
-            if deleted:
-                summary = f"Removed {deleted} {scope} image(s), reclaimed {reclaimed}"
-                if untagged:
-                    summary += f" (also dropped {untagged} tag reference(s))"
-            elif untagged:
-                summary = f"Dropped {untagged} tag reference(s), reclaimed {reclaimed}"
-            else:
-                summary = f"Nothing to remove, reclaimed {reclaimed}"
-                if not all_unused:
-                    # The usual surprise: an unused image that still carries a
-                    # tag is not dangling, so this mode skips it by design.
-                    summary += (
-                        ". Images that still carry a tag are not dangling;"
-                        " enable prune_all_unused to include them"
-                    )
-            await self._notify("Unused Images Deleted", f"{summary}.")
-            await self.coordinator.async_request_refresh()
-        finally:
-            self._attr_available = True
+            result = await self.coordinator.api.prune_images(
+                self.coordinator.endpoint_id, dangling_only=not all_unused
+            )
+        except PortainerError as err:
+            self._last_result = {"last_result": f"failed: {err}"}
             self.async_write_ha_state()
+            await self._notify("Image Prune Failed", f"Portainer rejected the prune request: {err}")
+            return
+
+        deleted, untagged = count_pruned(result or {})
+        reclaimed_bytes = int((result or {}).get("SpaceReclaimed") or 0)
+        reclaimed = format_bytes(reclaimed_bytes)
+        await self.coordinator.async_refresh()
+        remaining = self.coordinator.prunable_images()
+
+        scope = "unused" if all_unused else "dangling"
+        if deleted:
+            summary = f"Removed {deleted} {scope} image(s), reclaimed {reclaimed}"
+            if untagged:
+                summary += f" (also dropped {untagged} tag reference(s))"
+        elif untagged:
+            summary = f"Dropped {untagged} tag reference(s), reclaimed {reclaimed}"
+        else:
+            summary = f"Nothing to remove, reclaimed {reclaimed}"
+            if not all_unused:
+                # The usual surprise: an unused image that still carries a tag
+                # is not dangling, so this mode skips it by design.
+                summary += (
+                    ". Images that still carry a tag are not dangling;"
+                    " enable prune_all_unused to include them"
+                )
+        if remaining:
+            # Docker refuses to remove an image another image is built on, so a
+            # shared base layer can survive a prune that removed its children.
+            summary += (
+                f". {len(remaining)} image(s) remain deletable - docker keeps images that"
+                " another image or container still depends on"
+            )
+
+        self._last_result = {
+            "last_result": summary,
+            "last_images_deleted": deleted,
+            "last_tags_dropped": untagged,
+            "last_space_reclaimed": reclaimed,
+            "deletable_before": before,
+            "deletable_after": len(remaining),
+        }
+        self.async_write_ha_state()
+        await self._notify("Unused Images Deleted", f"{summary}.")

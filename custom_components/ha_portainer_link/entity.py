@@ -59,6 +59,45 @@ def is_container_running(container: dict[str, Any] | None) -> bool:
     return str(state or "").lower() == "running"
 
 
+def count_pruned(result: dict) -> tuple[int, int]:
+    """Return (images deleted, tag references dropped) from a prune response.
+
+    ImagesDeleted is not one entry per image: the daemon reports each removed
+    tag as its own "Untagged" item and each removed image id as a "Deleted" one,
+    so a single image commonly yields three entries. Counting the list length
+    overstates what happened.
+    """
+    items = result.get("ImagesDeleted") or []
+    deleted = sum(1 for item in items if isinstance(item, dict) and item.get("Deleted"))
+    untagged = sum(1 for item in items if isinstance(item, dict) and item.get("Untagged"))
+    return deleted, untagged
+
+
+def format_bytes(value: int) -> str:
+    """Return a compact human-readable size."""
+    size = float(value or 0)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} GB"
+
+
+def short_digest(value: str | None, length: int = 12) -> str | None:
+    """Return a readable digest: no algorithm prefix, truncated.
+
+    Comparisons keep using the full value; this is display only, so that a
+    sensor shows "93c91251e746" instead of 71 characters of hex.
+    """
+    if not value:
+        return None
+    text = str(value)
+    if text.startswith("unknown"):
+        return text
+    _, _, hexpart = text.rpartition(":")
+    return (hexpart or text)[:length]
+
+
 def container_health(container: dict[str, Any] | None) -> str | None:
     """Return the docker healthcheck state, or None when no healthcheck applies.
 

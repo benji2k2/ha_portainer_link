@@ -54,6 +54,7 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
         self.endpoint_id = endpoint_id
         self.endpoint_name: str | None = None
         self.docker_info: dict[str, Any] = {}
+        self.images: list[dict[str, Any]] = []
         self.containers: dict[str, dict[str, Any]] = {}
         self.stacks: dict[str, dict[str, Any]] = {}
         self.container_stack_map: dict[str, str] = {}
@@ -79,8 +80,10 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
 
             if self.is_instance_device_enabled():
                 await self._refresh_docker_info()
+                await self._refresh_images()
             else:
                 self.docker_info = {}
+                self.images = []
 
             containers = await self.api.get_containers(self.endpoint_id)
             stacks = await self.api.get_stacks(self.endpoint_id)
@@ -289,6 +292,47 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
 
     def update_available_count(self) -> int:
         return sum(1 for container_id in self.containers if self.get_update_availability(container_id))
+
+    async def _refresh_images(self) -> None:
+        """Refresh the local image list; keep the previous one on failure."""
+        try:
+            images = await self.api.get_images(self.endpoint_id)
+        except Exception as err:
+            _LOGGER.debug("Failed to list images: %s", err)
+            return
+        if isinstance(images, list):
+            self.images = images
+
+    def _used_image_ids(self) -> set[str]:
+        """Image ids referenced by a container on this endpoint."""
+        used = set()
+        for container in self.containers.values():
+            if image_id := container.get("ImageID"):
+                used.add(str(image_id))
+        return used
+
+    @staticmethod
+    def _is_dangling(image: dict[str, Any]) -> bool:
+        tags = image.get("RepoTags")
+        return not tags or tags == ["<none>:<none>"]
+
+    def prunable_images(self) -> list[dict[str, Any]]:
+        """Images the prune button would remove in its current scope.
+
+        Docker never removes an image a container still references, so those are
+        excluded here regardless of scope - otherwise the count would promise
+        more than a prune can deliver.
+        """
+        used = self._used_image_ids()
+        all_unused = self.is_prune_all_unused()
+        result = []
+        for image in self.images:
+            if str(image.get("Id")) in used:
+                continue
+            if not all_unused and not self._is_dangling(image):
+                continue
+            result.append(image)
+        return result
 
     def get_container(self, container_id: str | None) -> dict[str, Any] | None:
         return self.containers.get(container_id or "")
