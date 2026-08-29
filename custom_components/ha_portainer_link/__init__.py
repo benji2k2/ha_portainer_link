@@ -153,14 +153,17 @@ def _register_services(hass: HomeAssistant) -> None:
                 results.append(outcome)
                 continue
 
-            deleted, untagged = count_pruned(result or {})
+            deleted_entries, untagged = count_pruned(result or {})
             reclaimed = int((result or {}).get("SpaceReclaimed") or 0)
             await coordinator.async_refresh()
             remaining = coordinator.prunable_images()
+            # ImagesDeleted counts freed content ids, layers included, so the
+            # image count comes from the change in what is deletable.
             outcome.update(
                 {
-                    "images_deleted": deleted,
+                    "images_deleted": max(0, len(before) - len(remaining)),
                     "tags_dropped": untagged,
+                    "freed_content_ids": deleted_entries,
                     "space_reclaimed": format_bytes(reclaimed),
                     "space_reclaimed_bytes": reclaimed,
                     "deletable_after": len(remaining),

@@ -264,15 +264,18 @@ class PruneImagesButton(ButtonResultMixin, BaseHubEntity, ButtonEntity):
             )
             return
 
-        deleted, untagged = count_pruned(result or {})
+        deleted_entries, untagged = count_pruned(result or {})
         reclaimed_bytes = int((result or {}).get("SpaceReclaimed") or 0)
         reclaimed = format_bytes(reclaimed_bytes)
         await self.coordinator.async_refresh()
         remaining = self.coordinator.prunable_images()
+        # The response counts freed content ids, layers included, so it cannot say
+        # how many images went. The change in what is deletable can.
+        removed = max(0, before - len(remaining))
 
         scope = "unused" if all_unused else "dangling"
-        if deleted:
-            summary = f"Removed {deleted} {scope} image(s), reclaimed {reclaimed}"
+        if removed:
+            summary = f"Removed {removed} {scope} image(s), reclaimed {reclaimed}"
             if untagged:
                 summary += f" (also dropped {untagged} tag reference(s))"
         elif untagged:
@@ -296,8 +299,9 @@ class PruneImagesButton(ButtonResultMixin, BaseHubEntity, ButtonEntity):
 
         self._succeed(
             summary,
-            last_images_deleted=deleted,
+            last_images_deleted=removed,
             last_tags_dropped=untagged,
+            last_freed_content_ids=deleted_entries,
             last_space_reclaimed=reclaimed,
             deletable_before=before,
             deletable_after=len(remaining),

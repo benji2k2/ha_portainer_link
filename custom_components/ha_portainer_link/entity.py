@@ -61,12 +61,16 @@ def is_container_running(container: dict[str, Any] | None) -> bool:
 
 
 def count_pruned(result: dict) -> tuple[int, int]:
-    """Return (images deleted, tag references dropped) from a prune response.
+    """Return the raw (deleted, untagged) entry counts of a prune response.
 
-    ImagesDeleted is not one entry per image: the daemon reports each removed
-    tag as its own "Untagged" item and each removed image id as a "Deleted" one,
-    so a single image commonly yields three entries. Counting the list length
-    overstates what happened.
+    Neither number is a count of images. The daemon reports every removed tag as
+    its own "Untagged" item and every freed content id as a "Deleted" one, and
+    deleting a single image frees its config plus each layer that no other image
+    still holds - the same many-lined output `docker rmi` prints. One image with
+    eleven layers therefore reports twelve deletions.
+
+    These are useful as diagnostics only. How many *images* went is derived from
+    how many were deletable before and after, not from this response.
     """
     items = result.get("ImagesDeleted") or []
     deleted = sum(1 for item in items if isinstance(item, dict) and item.get("Deleted"))

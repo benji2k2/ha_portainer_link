@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-08-28
+
+### Fixed
+- Fixed the prune button still overstating how many images it removed. 0.6.6 replaced the raw entry count with the number of `Deleted` entries, but those are not one per image either: deleting one image also frees its config and every layer no other image holds, each reported separately. Removing a single image with eleven layers therefore claimed twelve. The image count now comes from the change in how many images were deletable before and after the prune, which is the only figure in play that actually counts images. The response's entry counts remain as a `last_freed_content_ids` attribute for diagnostics, and the `prune_images` action reports the same way.
+
 ## [0.8.0] - 2026-08-27
 
 ### Added
