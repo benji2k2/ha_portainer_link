@@ -35,8 +35,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 ]
             )
 
-    if coordinator.is_instance_device_enabled() and coordinator.is_prune_button_enabled():
-        entities.append(PruneImagesButton(coordinator, entry.entry_id))
+    if coordinator.is_instance_device_enabled():
+        entities.append(CheckUpdatesButton(coordinator, entry.entry_id))
+        if coordinator.is_prune_button_enabled():
+            entities.append(PruneImagesButton(coordinator, entry.entry_id))
 
     if coordinator.is_stack_view_enabled() and coordinator.is_stack_buttons_enabled():
         for stack_name in coordinator.stack_names():
@@ -305,4 +307,43 @@ class PruneImagesButton(ButtonResultMixin, BaseHubEntity, ButtonEntity):
             last_space_reclaimed=reclaimed,
             deletable_before=before,
             deletable_after=len(remaining),
+        )
+
+
+class CheckUpdatesButton(ButtonResultMixin, BaseHubEntity, ButtonEntity):
+    """Run a registry check now instead of waiting for the interval.
+
+    Registry checks are deliberately infrequent - they count against the
+    registry's pull quota - and the timestamp of the last one survives a
+    restart, so nothing else forces one. This does.
+    """
+
+    entity_suffix = "check_updates"
+    _attr_name = "Check for updates"
+    _attr_icon = "mdi:cloud-search-outline"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        pending = [
+            container_name(container)
+            for container_id, container in self.coordinator.containers.items()
+            if self.coordinator.get_update_availability(container_id)
+        ]
+        return {
+            "updates_available": len(pending),
+            "containers": sorted(pending),
+            **self.result_attributes,
+        }
+
+    async def async_press(self) -> None:
+        await self.coordinator.async_force_registry_check()
+        pending = sum(
+            1
+            for container_id in self.coordinator.containers
+            if self.coordinator.get_update_availability(container_id)
+        )
+        checked = len(self.coordinator.containers)
+        self._succeed(
+            f"Checked {checked} container(s), {pending} with an update available",
+            last_updates_available=pending,
         )

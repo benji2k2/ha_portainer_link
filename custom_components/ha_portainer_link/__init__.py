@@ -183,7 +183,36 @@ def _register_services(hass: HomeAssistant) -> None:
             results.append(outcome)
         return {"results": results}
 
+    async def handle_check_updates(call: ServiceCall) -> dict:
+        """Force a registry check now and report what it found."""
+        results = []
+        for entry in hass.config_entries.async_entries(DOMAIN):
+            data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+            if not isinstance(data, dict):
+                continue
+            coordinator = data.get(DATA_COORDINATOR)
+            if coordinator is None:
+                continue
+            await coordinator.async_force_registry_check()
+            pending = [
+                container_name(container)
+                for container_id, container in coordinator.containers.items()
+                if coordinator.get_update_availability(container_id)
+            ]
+            results.append(
+                {
+                    "environment": coordinator.endpoint_name or entry.title,
+                    "containers_checked": len(coordinator.containers),
+                    "updates_available": len(pending),
+                    "containers": sorted(pending),
+                }
+            )
+        return {"results": results}
+
     hass.services.async_register(DOMAIN, "reload", handle_reload)
+    hass.services.async_register(
+        DOMAIN, "check_updates", handle_check_updates, supports_response=SupportsResponse.OPTIONAL
+    )
     hass.services.async_register(DOMAIN, "refresh", handle_refresh)
     hass.services.async_register(
         DOMAIN, "prune_images", handle_prune_images, supports_response=SupportsResponse.OPTIONAL
@@ -193,7 +222,7 @@ def _register_services(hass: HomeAssistant) -> None:
 
 def _unregister_services(hass: HomeAssistant) -> None:
     """Unregister integration services."""
-    for service in ("reload", "refresh", "prune_images"):
+    for service in ("reload", "refresh", "prune_images", "check_updates"):
         if hass.services.has_service(DOMAIN, service):
             hass.services.async_remove(DOMAIN, service)
     hass.data.setdefault(DOMAIN, {})["_services_registered"] = False

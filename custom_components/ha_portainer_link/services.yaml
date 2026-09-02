@@ -26,3 +26,11 @@ prune_images:
       example: true
       selector:
         boolean:
+
+check_updates:
+  name: "Check for updates now"
+  description: >-
+    Run a registry check immediately instead of waiting for the configured
+    interval, and report what it found. Registry checks count against the
+    registry's pull quota, so use this deliberately rather than on a schedule.
+  fields: {}

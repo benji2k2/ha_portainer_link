@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-09-02
+
+### Added
+- Added a way to check for updates on demand, which 0.9.0 removed by accident: persisting the registry timestamp means a reload no longer forces a sweep, and with a six hour interval nothing else did either. There is now a "Check for updates" button on the instance device, reporting how many containers it checked and how many have an update, and a `check_updates` action that does the same and returns the result to the caller.
+
+### Removed
+- Removed `HANDOFF_RATE_LIMIT.md`, whose analysis is captured in the 0.9.0 entry and commit. It remains in the history.
+
+### Changed
+- The test suite is rebuilt around a shared `_harness.py` that stubs Home Assistant once instead of in every file, and covers image reference parsing, digests, device identity and cleanup, health detection, instance aggregates, pull and install behaviour, option wiring, prune reporting and the registry request budget.
+
 ## [0.9.0] - 2026-09-02
 
 ### Fixed

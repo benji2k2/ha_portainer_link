@@ -368,6 +368,17 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
             result.append(image)
         return result
 
+    async def async_force_registry_check(self) -> None:
+        """Run a registry sweep now, whatever the interval says.
+
+        Persisting the timestamp means a reload no longer triggers one, so there
+        has to be a deliberate way to ask - otherwise a six hour interval leaves
+        no way to check after updating something by hand.
+        """
+        self._last_registry_check = 0.0
+        self._registry_jitter = 0.0
+        await self.async_refresh()
+
     async def async_load_persisted_state(self) -> None:
         """Restore the registry timestamp and cached image data from disk.
 
