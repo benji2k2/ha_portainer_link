@@ -7,6 +7,7 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers.storage import Store
 
 from .const import (
     CONF_API_KEY,
@@ -38,6 +39,8 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["sensor", "binary_sensor", "switch", "button", "update"]
 
+STORAGE_VERSION = 1
+
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up HA Portainer Link services."""
@@ -65,7 +68,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             api,
             int(config[CONF_ENDPOINT_ID]),
             config,
+            store=Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"),
         )
+        # Before the first refresh, so a restart does not sweep the registry
+        # again while the configured interval has not elapsed.
+        await coordinator.async_load_persisted_state()
         await coordinator.async_config_entry_first_refresh()
     except Exception:
         await api.close()

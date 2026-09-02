@@ -28,6 +28,7 @@ class PortainerImageAPI:
         self._update_cache: dict[str, tuple[bool, float]] = {}
         self._version_cache: dict[str, tuple[str, float]] = {}
         self._digest_cache: dict[str, tuple[str, float]] = {}
+        self._token_cache: dict[str, tuple[str, float]] = {}
         self._last_check_window = time.time()
         self._check_count = 0
 
@@ -151,29 +152,109 @@ class PortainerImageAPI:
                 digests.add(digest)
         return digests
 
-    async def _registry_get_json(self, url: str) -> dict[str, Any] | None:
-        """GET a registry document, performing the 401 -> token -> retry dance."""
+    _TOKEN_TTL = 240
+
+    def _cached_token(self, repository: str) -> str | None:
+        """Return a still-valid bearer token for a repository, if we hold one."""
+        cached = self._token_cache.get(repository)
+        if not cached:
+            return None
+        token, issued = cached
+        if time.time() - issued >= self._TOKEN_TTL:
+            self._token_cache.pop(repository, None)
+            return None
+        return token
+
+    async def _registry_get_json(
+        self, url: str, repository: str | None = None
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        """GET a registry document, returning it with its content digest.
+
+        Reuses a bearer token for the repository when one is still valid.
+        Registries answer 401 before serving anything, so sending a known token
+        straight away removes one round trip per request - and with Docker Hub
+        counting manifest requests as pulls, round trips are worth avoiding.
+        """
         headers = self._accept_headers()
+        if repository and (token := self._cached_token(repository)):
+            headers["Authorization"] = f"Bearer {token}"
+
         resp = await self._request("GET", url, headers=headers)
         async with resp:
             if resp.status == 200:
-                return await resp.json(content_type=None)
+                digest = resp.headers.get("Docker-Content-Digest")
+                return await resp.json(content_type=None), digest
             if resp.status != 401:
                 _LOGGER.debug("Registry request failed for %s: HTTP %s", url, resp.status)
-                return None
+                return None, None
+            # A cached token that is no longer accepted must not be reused.
+            if repository:
+                self._token_cache.pop(repository, None)
             token = await self._get_registry_auth_token(
                 resp.headers.get("WWW-Authenticate") or resp.headers.get("Www-Authenticate")
             )
         if not token:
-            return None
-        auth_headers = dict(headers)
+            return None, None
+        if repository:
+            self._token_cache[repository] = (token, time.time())
+        auth_headers = dict(self._accept_headers())
         auth_headers["Authorization"] = f"Bearer {token}"
         resp = await self._request("GET", url, headers=auth_headers)
         async with resp:
             if resp.status == 200:
-                return await resp.json(content_type=None)
+                digest = resp.headers.get("Docker-Content-Digest")
+                return await resp.json(content_type=None), digest
             _LOGGER.debug("Authenticated registry request failed for %s: HTTP %s", url, resp.status)
-        return None
+        return None, None
+
+    async def get_remote_image_state(
+        self, image_name: str, local_image: dict[str, Any] | None = None, want_created: bool = False
+    ) -> dict[str, Any]:
+        """Resolve manifest digest, image id and build date from one manifest walk.
+
+        Every manifest request counts against a registry's pull quota, so these
+        three values are derived from a single walk instead of one walk each.
+        """
+        state: dict[str, Any] = {
+            "manifest_digest": None,
+            "config_digest": None,
+            "created": None,
+            "child_digests": set(),
+        }
+        try:
+            registry, repository, reference, _pinned = self._parse_image_ref(image_name)
+            if not repository or reference == "unknown":
+                return state
+            base = f"https://{registry}/v2/{repository}"
+
+            document, digest = await self._registry_get_json(
+                f"{base}/manifests/{reference}", repository
+            )
+            if not document:
+                return state
+            state["manifest_digest"] = self._normalize_digest(digest)
+
+            if document.get("manifests"):
+                state["child_digests"] = {
+                    d for m in document["manifests"]
+                    if (d := self._normalize_digest(m.get("digest")))
+                }
+                child = self._select_platform_manifest(document, local_image)
+                if not child:
+                    return state
+                document, _ = await self._registry_get_json(f"{base}/manifests/{child}", repository)
+                if not document:
+                    return state
+
+            config_digest = (document.get("config") or {}).get("digest")
+            state["config_digest"] = self._normalize_digest(config_digest)
+
+            if want_created and config_digest:
+                blob, _ = await self._registry_get_json(f"{base}/blobs/{config_digest}", repository)
+                state["created"] = (blob or {}).get("created")
+        except Exception as err:
+            _LOGGER.debug("Failed to resolve remote image state for %s: %s", image_name, err)
+        return state
 
     @staticmethod
     def _select_platform_manifest(index: dict[str, Any], local_image: dict[str, Any] | None) -> str | None:
@@ -213,105 +294,29 @@ class PortainerImageAPI:
 
         The manifest (index) digest moves whenever anything in the list is
         rewritten - re-pushed build attestations do it without touching a single
-        layer - so comparing it reports updates that ship no new software. The
-        config digest only changes when the image itself does, which is what
-        docker compares locally.
+        layer - so comparing it reports updates that ship no new software.
         """
-        try:
-            registry, repository, reference, _pinned = self._parse_image_ref(image_name)
-            if not repository or reference == "unknown":
-                return None
-            document = await self._registry_get_json(
-                f"https://{registry}/v2/{repository}/manifests/{reference}"
-            )
-            if not document:
-                return None
-            if document.get("manifests"):
-                child = self._select_platform_manifest(document, local_image)
-                if not child:
-                    return None
-                document = await self._registry_get_json(
-                    f"https://{registry}/v2/{repository}/manifests/{child}"
-                )
-                if not document:
-                    return None
-            return self._normalize_digest((document.get("config") or {}).get("digest"))
-        except Exception as err:
-            _LOGGER.debug("Failed to fetch remote config digest for %s: %s", image_name, err)
-            return None
+        state = await self.get_remote_image_state(image_name, local_image)
+        return state["config_digest"]
+
 
     async def get_remote_created(
         self, image_name: str, local_image: dict[str, Any] | None = None
     ) -> str | None:
-        """Return when the remote image was built, from its config blob.
+        """Return when the remote image was built, from its config blob."""
+        state = await self.get_remote_image_state(image_name, local_image, want_created=True)
+        return state["created"]
 
-        This costs one request beyond resolving the config digest, so callers
-        should ask only when an update actually exists rather than for every
-        container on every cycle.
-        """
-        try:
-            registry, repository, reference, _pinned = self._parse_image_ref(image_name)
-            if not repository or reference == "unknown":
-                return None
-            document = await self._registry_get_json(
-                f"https://{registry}/v2/{repository}/manifests/{reference}"
-            )
-            if not document:
-                return None
-            if document.get("manifests"):
-                child = self._select_platform_manifest(document, local_image)
-                if not child:
-                    return None
-                document = await self._registry_get_json(
-                    f"https://{registry}/v2/{repository}/manifests/{child}"
-                )
-                if not document:
-                    return None
-            config_digest = (document.get("config") or {}).get("digest")
-            if not config_digest:
-                return None
-            blob = await self._registry_get_json(
-                f"https://{registry}/v2/{repository}/blobs/{config_digest}"
-            )
-            return (blob or {}).get("created")
-        except Exception as err:
-            _LOGGER.debug("Failed to fetch remote build date for %s: %s", image_name, err)
-            return None
 
     async def _get_remote_manifest_digests(self, image_name: str) -> tuple[str | None, set[str]]:
         """Return primary remote digest and all manifest-list child digests."""
-        try:
-            registry, repository, reference, _pinned = self._parse_image_ref(image_name)
-            if not repository or reference == "unknown":
-                return None, set()
-            url = f"https://{registry}/v2/{repository}/manifests/{reference}"
-            headers = self._accept_headers()
+        state = await self.get_remote_image_state(image_name)
+        digests = set(state["child_digests"])
+        for key in ("manifest_digest", "config_digest"):
+            if value := state.get(key):
+                digests.add(value)
+        return state["manifest_digest"], digests
 
-            resp = await self._request("GET", url, headers=headers)
-            async with resp:
-                if resp.status == 200:
-                    primary = self._normalize_digest(resp.headers.get("Docker-Content-Digest"))
-                    return primary, await self._read_manifest_digests(resp, primary)
-                if resp.status != 401:
-                    _LOGGER.debug("Registry manifest request failed for %s: HTTP %s", image_name, resp.status)
-                    return None, set()
-                token = await self._get_registry_auth_token(
-                    resp.headers.get("WWW-Authenticate") or resp.headers.get("Www-Authenticate")
-                )
-
-            if not token:
-                return None, set()
-            auth_headers = dict(headers)
-            auth_headers["Authorization"] = f"Bearer {token}"
-            resp = await self._request("GET", url, headers=auth_headers)
-            async with resp:
-                if resp.status == 200:
-                    primary = self._normalize_digest(resp.headers.get("Docker-Content-Digest"))
-                    return primary, await self._read_manifest_digests(resp, primary)
-                _LOGGER.debug("Authenticated registry manifest request failed for %s: HTTP %s", image_name, resp.status)
-        except Exception as err:
-            _LOGGER.debug("Failed to fetch remote manifest digest for %s: %s", image_name, err)
-        return None, set()
 
     async def _get_remote_manifest_digest(self, image_name: str) -> str | None:
         """Return the primary remote manifest digest for compatibility callers."""

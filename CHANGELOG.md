@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-02
+
+### Fixed
+- Fixed registry checks exhausting Docker Hub's anonymous pull quota, which surfaced as `toomanyrequests` on unrelated `docker compose up` runs sharing the same public IP. Three causes compounded:
+  - The update check interval is documented in minutes but was compared against a seconds timestamp, so the 6 hour default ran every 6 minutes - sixty times too often.
+  - The timestamp of the last check lived only in memory, so every Home Assistant restart triggered a full sweep no matter how recently one had run. It is now persisted per config entry, along with the cached image data and update states, which also means sensors have values immediately after a restart instead of after the next sweep.
+  - Each image was walked three times over - once for the manifest digest, once for the image id, once for the build date - and every request re-fetched a bearer token after a 401. A single walk now yields all three, and tokens are reused while valid. That is five manifest requests per image down to two, and one token fetch instead of three. Registries count manifest requests as pulls, so this is the difference between a check that costs nothing and one that costs like a pull.
+- Registry sweeps are spread by up to five minutes of jitter, so restarts and multiple instances do not line up on the same second.
+
+### Added
+- Added `tests/`, a set of standalone scripts that stub Home Assistant and exercise the integration directly. No pytest, no Home Assistant install: `for t in tests/test_*.py; do python3 "$t"; done`.
+
 ## [0.8.1] - 2026-08-28
 
 ### Fixed

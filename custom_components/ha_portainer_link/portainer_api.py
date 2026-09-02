@@ -544,6 +544,12 @@ class PortainerAPI:
         except Exception:
             return "unknown"
 
+    async def get_remote_image_state(self, image_name, local_image=None, want_created=False):
+        """Resolve manifest digest, image id and build date in one manifest walk."""
+        if self.images:
+            return await self.images.get_remote_image_state(image_name, local_image, want_created)
+        return {"manifest_digest": None, "config_digest": None, "created": None, "child_digests": set()}
+
     async def get_remote_created(self, image_name, local_image=None):
         """Return the remote image build date, or None."""
         if self.images:

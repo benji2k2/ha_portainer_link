@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import logging
+import random
 import time
 from typing import Any
 
@@ -41,6 +42,7 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
         api: PortainerAPI,
         endpoint_id: int,
         config: dict[str, Any],
+        store=None,
     ) -> None:
         self.config = {**DEFAULT_OPTIONS, **config}
         update_interval = int(self.config.get(CONF_UPDATE_INTERVAL, DEFAULT_OPTIONS[CONF_UPDATE_INTERVAL]))
@@ -63,7 +65,11 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
         self.metrics: dict[str, dict[str, Any]] = {}
         self.image_data: dict[str, dict[str, Any]] = {}
         self.update_availability: dict[str, bool] = {}
+        self._store = store
         self._last_registry_check = 0.0
+        # Spread the first due sweep after a restart so several instances, or a
+        # host rebooting, do not all hit the registry in the same second.
+        self._registry_jitter = random.uniform(0, 300)
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch fresh data from Portainer."""
@@ -198,12 +204,23 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
             self.update_availability = {}
             return
 
-        now = time.monotonic()
-        interval = int(self.config.get(CONF_UPDATE_CHECK_INTERVAL, DEFAULT_OPTIONS[CONF_UPDATE_CHECK_INTERVAL]))
+        # Wall clock, not monotonic: the timestamp is persisted across restarts,
+        # and a monotonic reference point does not survive one.
+        now = time.time()
+        # The option is in minutes, like update_interval right above. Comparing
+        # it against seconds made the default 6 minutes instead of 6 hours, and
+        # every one of those sweeps counts against the registry's pull quota.
+        interval_minutes = int(
+            self.config.get(CONF_UPDATE_CHECK_INTERVAL, DEFAULT_OPTIONS[CONF_UPDATE_CHECK_INTERVAL])
+        )
+        interval = max(interval_minutes, 1) * 60 + self._registry_jitter
         registry_data_enabled = self.is_version_sensors_enabled() or self.is_update_sensors_enabled()
-        include_registry = registry_data_enabled and (now - self._last_registry_check >= max(interval, 60))
+        include_registry = registry_data_enabled and (now - self._last_registry_check >= interval)
         if include_registry:
             self._last_registry_check = now
+            # A fresh jitter each time, so a fixed interval does not drift into
+            # lockstep with anything else polling the same registry.
+            self._registry_jitter = random.uniform(0, 300)
 
         image_data: dict[str, dict[str, Any]] = {}
         update_availability = dict(self.update_availability)
@@ -231,8 +248,15 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                         if current_digest:
                             data["current_digest"] = current_digest
                     if include_registry and image_name:
-                        available_digest = await self.api.get_available_digest(self.endpoint_id, container_id)
-                        if available_digest and not str(available_digest).startswith("unknown"):
+                        # One walk of the manifest yields all three values. Every
+                        # manifest request counts against the registry's pull
+                        # quota, so asking three times over would triple the cost
+                        # of a check that downloads nothing.
+                        remote = await self.api.get_remote_image_state(
+                            image_name, image_info, want_created=True
+                        )
+                        available_digest = remote.get("manifest_digest")
+                        if available_digest:
                             data["available_digest"] = available_digest
 
                         # The manifest digest moves whenever the index is
@@ -240,17 +264,13 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                         # changing a single layer. The config digest is the image
                         # id docker itself compares, so it decides here and the
                         # manifest digests stay purely informational.
-                        remote_config = await self.api.get_remote_config_digest(image_name, image_info)
+                        remote_config = remote.get("config_digest")
                         if remote_config:
                             data["available_config_digest"] = remote_config
-                            if image_id and remote_config != image_id:
-                                # One extra blob request, and only when there is
-                                # actually something new to describe.
-                                data["available_image_created"] = await self.api.get_remote_created(
-                                    image_name, image_info
-                                )
+                            if created := remote.get("created"):
+                                data["available_image_created"] = created
                             update_availability[container_id] = bool(image_id and remote_config != image_id)
-                        elif available_digest and not str(available_digest).startswith("unknown"):
+                        elif available_digest:
                             current_digest = data.get("current_digest")
                             update_availability[container_id] = bool(
                                 current_digest
@@ -271,6 +291,11 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
             }
         elif not self.is_update_sensors_enabled():
             self.update_availability = {}
+
+        if include_registry:
+            # After the availability map is final, so a restart restores the
+            # update states exactly as the sweep left them.
+            await self._async_save_state()
 
     async def _refresh_endpoint_name(self) -> None:
         """Look up the Portainer environment name once per config entry."""
@@ -342,6 +367,48 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                 continue
             result.append(image)
         return result
+
+    async def async_load_persisted_state(self) -> None:
+        """Restore the registry timestamp and cached image data from disk.
+
+        Without this every Home Assistant restart triggers a full registry sweep,
+        because the timestamp of the last one lived only in memory. Registries
+        count those manifest requests as pulls, so a few restarts can exhaust an
+        anonymous quota on their own.
+        """
+        if self._store is None:
+            return
+        try:
+            stored = await self._store.async_load() or {}
+        except Exception as err:
+            _LOGGER.debug("Could not load persisted state: %s", err)
+            return
+        timestamp = stored.get("last_registry_check")
+        if isinstance(timestamp, (int, float)) and timestamp <= time.time():
+            self._last_registry_check = float(timestamp)
+        if isinstance(stored.get("image_data"), dict):
+            # Restores the sensors immediately instead of leaving them empty
+            # until the next sweep is actually due.
+            self.image_data = stored["image_data"]
+        if isinstance(stored.get("update_availability"), dict):
+            self.update_availability = {
+                key: bool(value) for key, value in stored["update_availability"].items()
+            }
+
+    async def _async_save_state(self) -> None:
+        """Persist what a restart would otherwise throw away."""
+        if self._store is None:
+            return
+        try:
+            await self._store.async_save(
+                {
+                    "last_registry_check": self._last_registry_check,
+                    "image_data": self.image_data,
+                    "update_availability": self.update_availability,
+                }
+            )
+        except Exception as err:
+            _LOGGER.debug("Could not persist state: %s", err)
 
     def get_container(self, container_id: str | None) -> dict[str, Any] | None:
         return self.containers.get(container_id or "")
