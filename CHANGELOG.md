@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-09-04
+
+### Fixed
+- Fixed the deprecation warning about `via_device`, which Home Assistant drops in 2027.8.0. Device links now use `via_device_id`, the registry id of the parent device, which means that device has to exist before the entities pointing at it are added - so the instance device is registered during setup rather than left to whichever platform happens to run first. The old `via_device` tuple is still sent on Home Assistant versions predating `via_device_id`: an unrecognised `device_info` key raises and stops the entity from being created, so the choice is made from what the running Home Assistant declares rather than assumed.
+
 ## [0.9.1] - 2026-09-02
 
 ### Added

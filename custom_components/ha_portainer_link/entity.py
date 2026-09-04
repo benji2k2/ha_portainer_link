@@ -7,9 +7,16 @@ import re
 from typing import Any
 from urllib.parse import urlparse
 
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
+
+# Home Assistant 2026.8 replaced the (domain, identifier) `via_device` tuple with
+# `via_device_id`, the registry id of the parent, and will drop the old key in
+# 2027.8. Unknown device_info keys raise and stop the entity from being added, so
+# which one to send has to be decided from what this Home Assistant knows.
+SUPPORTS_VIA_DEVICE_ID = "via_device_id" in getattr(dr.DeviceInfo, "__annotations__", {})
 
 HEALTH_STATES = ("healthy", "unhealthy", "starting")
 HEALTH_UNHEALTHY = "unhealthy"
@@ -213,6 +220,7 @@ def container_device_info(
     container_id: str | None,
     via_hub: bool = False,
     instance_name: str | None = None,
+    hub_registry_id: str | None = None,
 ) -> dict[str, Any]:
     """Return Home Assistant device info for a standalone container.
 
@@ -230,8 +238,7 @@ def container_device_info(
             f"{base_url}/#!/containers/{container_id}/details" if container_id else base_url
         ),
     }
-    if via_hub:
-        info["via_device"] = (DOMAIN, hub_device_id(entry_id, endpoint_id, base_url))
+    _link_to_hub(info, entry_id, endpoint_id, base_url, via_hub, hub_registry_id)
     return info
 
 
@@ -242,6 +249,7 @@ def stack_device_info(
     name: str,
     via_hub: bool = False,
     instance_name: str | None = None,
+    hub_registry_id: str | None = None,
 ) -> dict[str, Any]:
     """Return Home Assistant device info for a Docker stack."""
     host_name = instance_name or host_display_name(base_url)
@@ -252,9 +260,32 @@ def stack_device_info(
         "model": "Docker Stack",
         "configuration_url": f"{base_url}/#!/stacks/{name}",
     }
-    if via_hub:
-        info["via_device"] = (DOMAIN, hub_device_id(entry_id, endpoint_id, base_url))
+    _link_to_hub(info, entry_id, endpoint_id, base_url, via_hub, hub_registry_id)
     return info
+
+
+def _link_to_hub(
+    info: dict[str, Any],
+    entry_id: str,
+    endpoint_id: int,
+    base_url: str,
+    via_hub: bool,
+    hub_registry_id: str | None,
+) -> None:
+    """Point a device at the instance device it belongs to.
+
+    The modern key needs the parent's registry id, which only exists once that
+    device is registered - hence the setup registering it up front. Without one,
+    the link is left out rather than guessed: an unresolvable id is silently
+    dropped by the registry anyway.
+    """
+    if not via_hub:
+        return
+    if SUPPORTS_VIA_DEVICE_ID:
+        if hub_registry_id:
+            info["via_device_id"] = hub_registry_id
+        return
+    info["via_device"] = (DOMAIN, hub_device_id(entry_id, endpoint_id, base_url))
 
 
 def hub_device_info(
@@ -359,6 +390,7 @@ class BaseContainerEntity(BasePortainerEntity):
                 self.stack_info.get("stack_name") or self.container_name,
                 via_hub=via_hub,
                 instance_name=self.coordinator.endpoint_name,
+                hub_registry_id=self.coordinator.hub_device_id,
             )
         return container_device_info(
             self.entry_id,
@@ -369,6 +401,7 @@ class BaseContainerEntity(BasePortainerEntity):
             self.current_container_id,
             via_hub=via_hub,
             instance_name=self.coordinator.endpoint_name,
+            hub_registry_id=self.coordinator.hub_device_id,
         )
 
 
@@ -400,6 +433,7 @@ class BaseStackEntity(BasePortainerEntity):
             self.stack_name,
             via_hub=self.coordinator.is_instance_device_enabled(),
             instance_name=self.coordinator.endpoint_name,
+            hub_registry_id=self.coordinator.hub_device_id,
         )
 
 

@@ -1,23 +1,8 @@
-import sys, types, importlib.util, pathlib, asyncio, datetime as _dt
-SRC = pathlib.Path("/Users/benjamin-d/AI/ha_portainer_link/custom_components/ha_portainer_link")
-def mod(n, **a):
-    m = types.ModuleType(n)
-    for k,v in a.items(): setattr(m,k,v)
-    sys.modules[n]=m; return m
-ah = mod("aiohttp"); ah.__getattr__ = lambda n: object
-mod("aiohttp.client_exceptions", ClientConnectorCertificateError=type("E",(Exception,),{}))
-ha = mod("homeassistant"); ha.__path__=[]
-mod("homeassistant.helpers"); mod("homeassistant.util")
-mod("homeassistant.util.dt", now=lambda: _dt.datetime(2026,8,27,12,0,0, tzinfo=_dt.timezone.utc))
-mod("homeassistant.helpers.update_coordinator",
-    CoordinatorEntity=type("CE",(),{"__init__":lambda s,c: setattr(s,"coordinator",c)}),
-    DataUpdateCoordinator=object, UpdateFailed=Exception)
-mod("homeassistant.components"); mod("homeassistant.components.button", ButtonEntity=object)
-pkg = types.ModuleType("hpl"); pkg.__path__=[str(SRC)]; sys.modules["hpl"]=pkg
-def load(n):
-    sp = importlib.util.spec_from_file_location(f"hpl.{n}", SRC/f"{n}.py")
-    m = importlib.util.module_from_spec(sp); sys.modules[f"hpl.{n}"]=m; sp.loader.exec_module(m); return m
-load("const"); load("entity"); pa = load("portainer_api"); b = load("button")
+import sys, pathlib, asyncio, types
+sys.path.insert(0, str(pathlib.Path(__file__).parent))
+from _harness import load, Checker
+
+pa, b = load("const", "entity", "portainer_api", "button")[2:4]
 
 fails=[]
 def check(l, got, want):
@@ -59,7 +44,7 @@ async def main():
     check("keine benachrichtigung", NOTIFIED, [])
     check("ergebnis am button", btn.result_attributes["last_result"], "Restarted plex")
     check("als erfolg markiert", btn.result_attributes["last_result_ok"], True)
-    check("zeitstempel gesetzt", btn.result_attributes["last_run"], "2026-08-27T12:00:00+00:00")
+    check("zeitstempel gesetzt", btn.result_attributes["last_run"], "2026-09-02T12:00:00+00:00")
 
     print("\n=== fehler: benachrichtigung UND ergebnis am button ===")
     NOTIFIED.clear()

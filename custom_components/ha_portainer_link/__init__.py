@@ -23,12 +23,13 @@ from .const import (
 )
 from .coordinator import PortainerDataUpdateCoordinator
 from .entity import (
-    count_pruned,
-    format_bytes,
     container_device_id,
     container_name,
     container_unique_id,
+    count_pruned,
+    format_bytes,
     hub_device_id,
+    hub_device_info,
     sanitize,
     stable_container_key,
     stack_device_id,
@@ -82,6 +83,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         DATA_API: api,
         DATA_COORDINATOR: coordinator,
     }
+    _register_hub_device(hass, entry, coordinator)
     _migrate_entity_unique_ids(hass, entry, coordinator)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     _register_services(hass)
@@ -226,6 +228,40 @@ def _unregister_services(hass: HomeAssistant) -> None:
         if hass.services.has_service(DOMAIN, service):
             hass.services.async_remove(DOMAIN, service)
     hass.data.setdefault(DOMAIN, {})["_services_registered"] = False
+
+
+def _register_hub_device(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: PortainerDataUpdateCoordinator,
+) -> None:
+    """Register the instance device up front and remember its registry id.
+
+    Container and stack devices link to it with `via_device_id`, which is the
+    parent's registry id - so the parent has to exist before those entities are
+    added. Registering it here rather than relying on the sensor platform
+    happening to run first makes the hierarchy independent of platform order.
+    """
+    if not coordinator.is_instance_device_enabled():
+        coordinator.hub_device_id = None
+        return
+    try:
+        device = dr.async_get(hass).async_get_or_create(
+            config_entry_id=entry.entry_id,
+            **hub_device_info(
+                entry.entry_id,
+                coordinator.endpoint_id,
+                coordinator.api.base_url,
+                coordinator.endpoint_name,
+                coordinator.docker_info,
+            ),
+        )
+    except Exception as err:
+        # Without an id the links are simply left out; nothing else depends on it.
+        _LOGGER.debug("Could not register the instance device: %s", err)
+        coordinator.hub_device_id = None
+        return
+    coordinator.hub_device_id = device.id
 
 
 def _active_device_ids(

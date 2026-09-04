@@ -42,6 +42,8 @@ def _install_stubs() -> None:
 
     ha = _module("homeassistant")
     ha.__path__ = []
+    helpers = _module("homeassistant.helpers")
+    helpers.__path__ = []
     _module(
         "homeassistant.core",
         HomeAssistant=object,
@@ -51,11 +53,14 @@ def _install_stubs() -> None:
     _module("homeassistant.config_entries", ConfigEntry=object,
             ConfigFlow=object, OptionsFlow=object)
     _module("homeassistant.exceptions", HomeAssistantError=HomeAssistantError)
-    _module("homeassistant.helpers")
     _module("homeassistant.helpers.entity", EntityCategory=types.SimpleNamespace(DIAGNOSTIC="diagnostic"))
     _module("homeassistant.helpers.storage", Store=object)
+    # DeviceInfo carries via_device_id since 2026.8; the integration checks for
+    # it to decide which key to send, so the stub has to carry it too.
+    class DeviceInfo(dict):
+        __annotations__ = {"identifiers": set, "name": str, "via_device_id": str}
     _module("homeassistant.helpers.device_registry", DeviceEntry=object,
-            async_get=None, async_entries_for_config_entry=None)
+            DeviceInfo=DeviceInfo, async_get=None, async_entries_for_config_entry=None)
     _module("homeassistant.helpers.entity_registry", async_get=None, async_entries_for_device=None)
     _module(
         "homeassistant.helpers.update_coordinator",
@@ -84,6 +89,22 @@ def _install_stubs() -> None:
         UpdateEntity=object,
         UpdateEntityFeature=types.SimpleNamespace(INSTALL=1),
     )
+
+    # "from homeassistant.helpers import device_registry" resolves an attribute,
+    # not a module path, so each submodule has to be hung on its parent.
+    for parent, child in (
+        ("homeassistant.helpers", "device_registry"),
+        ("homeassistant.helpers", "entity_registry"),
+        ("homeassistant.helpers", "storage"),
+        ("homeassistant.helpers", "entity"),
+        ("homeassistant.helpers", "update_coordinator"),
+        ("homeassistant", "helpers"),
+        ("homeassistant", "util"),
+        ("homeassistant", "config_entries"),
+        ("homeassistant", "core"),
+        ("homeassistant", "components"),
+    ):
+        setattr(sys.modules[parent], child, sys.modules[f"{parent}.{child}"])
 
 
 class HomeAssistantError(Exception):

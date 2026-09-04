@@ -18,12 +18,33 @@ c.true("hub kollidiert mit keinem", entity.hub_device_id(ENTRY, EP, BASE) not in
     entity.container_device_id(ENTRY, EP, BASE, "container_plex"),
     entity.stack_device_id(ENTRY, EP, BASE, "media")})
 
-c.section("via_device nur wenn das instanz-geraet aktiv ist")
+c.section("verknuepfung zum instanz-geraet")
 off = entity.container_device_info(ENTRY, EP, BASE, "container_plex", "plex", "cid", via_hub=False)
-on = entity.container_device_info(ENTRY, EP, BASE, "container_plex", "plex", "cid", via_hub=True)
-c("ohne hub kein via_device", "via_device" in off, False)
-c("mit hub verweist er darauf", on.get("via_device"), (const.DOMAIN, entity.hub_device_id(ENTRY, EP, BASE)))
-c("identifier bleiben gleich", off["identifiers"], on["identifiers"])
+on = entity.container_device_info(ENTRY, EP, BASE, "container_plex", "plex", "cid",
+                                  via_hub=True, hub_registry_id="reg-hub-1")
+c("ohne hub gar keine verknuepfung",
+  {"via_device", "via_device_id"} & set(off), set())
+c("identifier bleiben in beiden faellen gleich", off["identifiers"], on["identifiers"])
+
+# Ab HA 2026.8 ist via_device_id richtig, davor das (domain, identifier)-tupel.
+# Ein unbekannter device_info-schluessel wirft und verhindert die entitaet, also
+# muss genau einer der beiden gesetzt sein - nie beide.
+if entity.SUPPORTS_VIA_DEVICE_ID:
+    c("neues HA: via_device_id mit der registry-id", on.get("via_device_id"), "reg-hub-1")
+    c("und nicht mehr der deprecated schluessel", "via_device" in on, False)
+    ohne_id = entity.container_device_info(ENTRY, EP, BASE, "container_plex", "plex", "cid",
+                                           via_hub=True, hub_registry_id=None)
+    c("ohne registry-id lieber gar nichts als geraten",
+      {"via_device", "via_device_id"} & set(ohne_id), set())
+else:
+    c("altes HA: tupel", on.get("via_device"), (const.DOMAIN, entity.hub_device_id(ENTRY, EP, BASE)))
+    c("und kein via_device_id", "via_device_id" in on, False)
+c("nie beide gleichzeitig", len({"via_device", "via_device_id"} & set(on)), 1)
+
+c.section("stack-geraete verknuepfen genauso")
+st = entity.stack_device_info(ENTRY, EP, BASE, "media", via_hub=True, hub_registry_id="reg-hub-1")
+key = "via_device_id" if entity.SUPPORTS_VIA_DEVICE_ID else "via_device"
+c.true(f"stack nutzt {key}", key in st)
 
 c.section("suffix: umgebungsname statt url-host")
 c("ohne instanznamen der hostname",

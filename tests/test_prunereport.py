@@ -1,23 +1,8 @@
-import sys, types, importlib.util, pathlib, asyncio, datetime as _dt
-SRC = pathlib.Path("/Users/benjamin-d/AI/ha_portainer_link/custom_components/ha_portainer_link")
-def mod(n, **a):
-    m = types.ModuleType(n)
-    for k,v in a.items(): setattr(m,k,v)
-    sys.modules[n]=m; return m
-ah = mod("aiohttp"); ah.__getattr__ = lambda n: object
-mod("aiohttp.client_exceptions", ClientConnectorCertificateError=type("E",(Exception,),{}))
-ha = mod("homeassistant"); ha.__path__=[]
-mod("homeassistant.helpers"); mod("homeassistant.util")
-mod("homeassistant.util.dt", now=lambda: _dt.datetime(2026,8,28,tzinfo=_dt.timezone.utc))
-mod("homeassistant.helpers.update_coordinator",
-    CoordinatorEntity=type("CE",(),{"__init__":lambda s,c: setattr(s,"coordinator",c)}),
-    DataUpdateCoordinator=object, UpdateFailed=Exception)
-mod("homeassistant.components"); mod("homeassistant.components.button", ButtonEntity=object)
-pkg = types.ModuleType("hpl"); pkg.__path__=[str(SRC)]; sys.modules["hpl"]=pkg
-def load(n):
-    sp = importlib.util.spec_from_file_location(f"hpl.{n}", SRC/f"{n}.py")
-    m = importlib.util.module_from_spec(sp); sys.modules[f"hpl.{n}"]=m; sp.loader.exec_module(m); return m
-load("const"); load("entity"); load("portainer_api"); b = load("button")
+import sys, pathlib, asyncio, types
+sys.path.insert(0, str(pathlib.Path(__file__).parent))
+from _harness import load, Checker
+
+b = load("const", "entity", "portainer_api", "button")[3]
 b._send_notification = lambda *a, **k: asyncio.sleep(0)
 
 fails=[]

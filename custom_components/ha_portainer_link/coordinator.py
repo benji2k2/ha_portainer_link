@@ -55,6 +55,9 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
         self.api = api
         self.endpoint_id = endpoint_id
         self.endpoint_name: str | None = None
+        # Registry id of the instance device, filled in during setup so
+        # container devices can point at it with via_device_id.
+        self.hub_device_id: str | None = None
         self.docker_info: dict[str, Any] = {}
         self.images: list[dict[str, Any]] = []
         self.containers: dict[str, dict[str, Any]] = {}
