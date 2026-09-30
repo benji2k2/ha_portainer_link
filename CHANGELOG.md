@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-09-30
+
+### Added
+- Added a "Reconfigure" step, so the API key or username and password of an existing entry can be changed without deleting it and losing its entities. The connection is tested before anything is saved; an empty secret field keeps the stored value, so a key can be rotated without retyping the rest. Host and environment cannot be changed there: both are part of every entity's unique_id, and changing them would orphan the entities rather than move them.
+- Added English and German translations for the setup and reconfigure dialogs, which so far showed raw field names.
+- The test harness now stubs `ConfigFlow` (and voluptuous where it is not installed), so a config flow step can be driven by a test; `test_reconfigure.py` covers the new step.
+
 ## [0.9.2] - 2026-09-04
 
 ### Fixed

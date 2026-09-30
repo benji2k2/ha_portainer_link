@@ -70,6 +70,43 @@ class PortainerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_reconfigure(self, user_input=None):
+        """Change the credentials of an existing entry.
+
+        Host and endpoint stay fixed: both are part of every entity's unique_id, so
+        changing them would orphan the entities instead of moving them. An empty
+        secret field keeps the stored value, so a key can be rotated without
+        retyping the rest.
+        """
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            updates = {CONF_USERNAME: user_input.get(CONF_USERNAME) or None}
+            for key in (CONF_API_KEY, CONF_PASSWORD):
+                updates[key] = user_input.get(key) or entry.data.get(key)
+            # Options override data (verify_ssl lives there), exactly as in setup.
+            candidate = {**DEFAULT_OPTIONS, **entry.data, **entry.options, **updates}
+            if await _validate_connection(candidate):
+                return self.async_update_reload_and_abort(entry, data_updates=updates)
+            errors["base"] = "cannot_connect"
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(CONF_API_KEY): str,
+                    vol.Optional(CONF_USERNAME, default=entry.data.get(CONF_USERNAME) or ""): str,
+                    vol.Optional(CONF_PASSWORD): str,
+                }
+            ),
+            description_placeholders={
+                "host": entry.data[CONF_HOST],
+                "endpoint_id": str(entry.data[CONF_ENDPOINT_ID]),
+            },
+            errors=errors,
+        )
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry):

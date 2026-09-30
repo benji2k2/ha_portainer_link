@@ -49,9 +49,14 @@ def _install_stubs() -> None:
         HomeAssistant=object,
         ServiceCall=object,
         SupportsResponse=types.SimpleNamespace(OPTIONAL="optional", ONLY="only", NONE="none"),
+        callback=lambda func: func,
     )
     _module("homeassistant.config_entries", ConfigEntry=object,
-            ConfigFlow=object, OptionsFlow=object)
+            ConfigFlow=ConfigFlow, OptionsFlow=object)
+    try:
+        import voluptuous  # noqa: F401  (the real one, where installed)
+    except ModuleNotFoundError:
+        _install_voluptuous_stub()
     _module("homeassistant.exceptions", HomeAssistantError=HomeAssistantError)
     _module("homeassistant.helpers.entity", EntityCategory=types.SimpleNamespace(DIAGNOSTIC="diagnostic"))
     _module("homeassistant.helpers.storage", Store=object)
@@ -109,6 +114,54 @@ def _install_stubs() -> None:
 
 class HomeAssistantError(Exception):
     """Stand-in for the real one, so tests can assert on it."""
+
+
+class ConfigFlow:
+    """Just enough of HA's ConfigFlow for a test to drive a flow step.
+
+    A test sets `reconfigure_entry`; the results come back as plain dicts, and
+    the last async_update_reload_and_abort call is kept on `updated`.
+    """
+
+    reconfigure_entry = None
+    updated = None
+
+    def __init_subclass__(cls, **kwargs):  # swallows domain=...
+        super().__init_subclass__()
+
+    def _get_reconfigure_entry(self):
+        return self.reconfigure_entry
+
+    def async_show_form(self, **kwargs):
+        return {"type": "form", **kwargs}
+
+    def async_update_reload_and_abort(self, entry, **kwargs):
+        self.updated = (entry, kwargs)
+        return {"type": "abort", "reason": "reconfigure_successful"}
+
+
+def _install_voluptuous_stub() -> None:
+    """Minimal voluptuous: a schema only has to list its keys and defaults."""
+
+    class Marker:
+        def __init__(self, schema, default=None, **_):
+            self.schema, self.default = schema, default
+
+        def __repr__(self):
+            return f"{type(self).__name__}({self.schema!r})"
+
+    class Schema(dict):
+        pass
+
+    _module(
+        "voluptuous",
+        Schema=Schema,
+        Required=type("Required", (Marker,), {}),
+        Optional=type("Optional", (Marker,), {}),
+        All=lambda *a, **k: ("All", a),
+        Coerce=lambda t: t,
+        Range=lambda **k: ("Range", k),
+    )
 
 
 class CoordinatorEntity:

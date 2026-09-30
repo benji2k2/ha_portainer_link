@@ -1,0 +1,39 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Portainer",
+        "data": {
+          "host": "Portainer URL",
+          "username": "Username",
+          "password": "Password",
+          "api_key": "API key",
+          "endpoint_id": "Environment (endpoint) ID",
+          "verify_ssl": "Verify SSL certificate"
+        },
+        "data_description": {
+          "api_key": "Takes precedence over username and password."
+        }
+      },
+      "reconfigure": {
+        "title": "Change Portainer credentials",
+        "description": "Portainer: {host}, environment {endpoint_id}. Host and environment cannot be changed here, because every entity is tied to them. Leave a secret field empty to keep the stored value.",
+        "data": {
+          "api_key": "API key",
+          "username": "Username",
+          "password": "Password"
+        },
+        "data_description": {
+          "api_key": "Takes precedence over username and password."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to Portainer with these credentials, or the environment was not found."
+    },
+    "abort": {
+      "already_configured": "This Portainer environment is already configured.",
+      "reconfigure_successful": "Credentials updated."
+    }
+  }
+}

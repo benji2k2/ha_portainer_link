@@ -1,0 +1,39 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Mit Portainer verbinden",
+        "data": {
+          "host": "Portainer-URL",
+          "username": "Benutzername",
+          "password": "Passwort",
+          "api_key": "API-Schlüssel",
+          "endpoint_id": "Umgebungs-ID (Endpoint)",
+          "verify_ssl": "SSL-Zertifikat prüfen"
+        },
+        "data_description": {
+          "api_key": "Hat Vorrang vor Benutzername und Passwort."
+        }
+      },
+      "reconfigure": {
+        "title": "Portainer-Zugangsdaten ändern",
+        "description": "Portainer: {host}, Umgebung {endpoint_id}. Host und Umgebung lassen sich hier nicht ändern, weil alle Entitäten daran hängen. Ein leeres Geheimnisfeld behält den gespeicherten Wert.",
+        "data": {
+          "api_key": "API-Schlüssel",
+          "username": "Benutzername",
+          "password": "Passwort"
+        },
+        "data_description": {
+          "api_key": "Hat Vorrang vor Benutzername und Passwort."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Keine Verbindung zu Portainer mit diesen Zugangsdaten, oder die Umgebung wurde nicht gefunden."
+    },
+    "abort": {
+      "already_configured": "Diese Portainer-Umgebung ist bereits eingerichtet.",
+      "reconfigure_successful": "Zugangsdaten aktualisiert."
+    }
+  }
+}

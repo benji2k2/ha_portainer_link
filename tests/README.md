@@ -24,6 +24,7 @@ collected — it runs every check first, so one break does not hide the rest.
 | `test_manualcheck.py` | erzwungener Registry-Check |
 | `test_ratelimit.py` | Anfragezahl pro Image, Token-Wiederverwendung, Persistenz |
 | `test_options.py` | jede Option im Formular und ausgewertet |
+| `test_reconfigure.py` | Zugangsdaten neu konfigurieren: Formular ohne Geheimnisse, leeres Feld behält den Wert, Host/Endpoint fest, Fehler speichert nichts |
 | `test_prune_count.py`, `test_prunereport.py`, `test_buttonresult.py` | Prune-Zählung und Button-Rückmeldung |
 
 Sie liegen hier statt in einem temporären Verzeichnis, weil eine frühere Fassung
