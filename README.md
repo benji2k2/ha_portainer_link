@@ -100,6 +100,10 @@ and by the two images' build dates otherwise. When a version is known, only rele
 project maintaining an older line in parallel does not mix the two. A new image without a new release - a rebuild on an
 updated base image, for example - says so instead of showing an unrelated release.
 
+Images without a version label get one from the tags sharing their digest - `uptime-kuma:2-rootless` is the same
+manifest as `2.5.6-rootless` and reads `2.5.6`. This works for Docker Hub and Quay, whose web APIs list tags with digests
+without counting against the pull quota; other registries are left out.
+
 GitHub allows 60 unauthenticated requests per hour and address; releases are cached for six hours per repository and
 only fetched when the dialog is opened.
 

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-14
+
+### Added
+- Images without a version label now show a version too, taken from the tags that share their digest: `louislam/uptime-kuma:2-rootless` is the same manifest as `2.5.6-rootless`, so it reads `2.5.6`. The most specific version tag wins, a variant suffix such as `-alpine` or `-rootless` is dropped, a prerelease keeps its suffix. This works for Docker Hub and Quay, whose web APIs list tags with their digests in one request that does not count against the pull quota; other registries would need a manifest request per tag and are left out. The same lookup on the available image's digest names the version an update brings, and the release notes use it as well. It runs on every registry sweep and whenever the running image changed, so the new version shows right after an update.
+
 ## [0.10.0] - 2026-10-14
 
 ### Added

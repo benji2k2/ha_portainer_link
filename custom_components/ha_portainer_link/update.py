@@ -90,8 +90,9 @@ class ContainerUpdateEntity(BaseContainerEntity, UpdateEntity):
     def installed_version(self):
         data = self._image_data
         image_id = data.get("current_config_digest") or data.get("current_digest")
-        if data.get("oci_version") or image_id:
-            return self._label(data.get("oci_version"), image_id)
+        version = data.get("oci_version") or data.get("tag_version")
+        if version or image_id:
+            return self._label(version, image_id)
         return data.get("current_version")
 
     @property
@@ -100,7 +101,8 @@ class ContainerUpdateEntity(BaseContainerEntity, UpdateEntity):
         if not self.coordinator.get_update_availability(self.current_container_id):
             return self.installed_version
         image_id = data.get("available_config_digest") or data.get("available_digest")
-        return self._label(data.get("available_oci_version"), image_id) or data.get("available_version")
+        version = data.get("available_oci_version") or data.get("available_tag_version")
+        return self._label(version, image_id) or data.get("available_version")
 
     def version_is_newer(self, latest_version: str, installed_version: str) -> bool:
         """Image ids carry no order; the registry comparison already decided."""
@@ -170,10 +172,12 @@ class ContainerUpdateEntity(BaseContainerEntity, UpdateEntity):
             return f"Could not load the releases of [{repo}](https://github.com/{repo}/releases) from GitHub."
         data = self._image_data
         update = self.coordinator.get_update_availability(self.current_container_id)
+        installed = data.get("oci_version") or data.get("tag_version")
+        available = data.get("available_oci_version") or data.get("available_tag_version")
         selected = select_releases(
             releases,
-            installed_version=data.get("oci_version"),
-            available_version=data.get("available_oci_version") if update else data.get("oci_version"),
+            installed_version=installed,
+            available_version=available if update else installed,
             installed_built=data.get("image_created"),
             available_built=data.get("available_image_created") if update else data.get("image_created"),
         )

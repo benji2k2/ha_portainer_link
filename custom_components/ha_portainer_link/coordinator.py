@@ -34,6 +34,7 @@ from .const import (
 from .entity import container_name, is_container_running, stable_container_key, stack_info_from_container
 from .portainer_api import PortainerAPI
 from .release_notes import SOURCE_LABEL, VERSION_LABEL, ReleaseNotesClient, parse_overrides
+from .tag_versions import TagVersionClient
 from .watchtower import WatchtowerClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -82,6 +83,7 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
         session = getattr(api, "session", None)
         self.release_notes = ReleaseNotesClient(session) if self.config.get(CONF_RELEASE_NOTES) else None
         self.release_note_sources = parse_overrides(self.config.get(CONF_RELEASE_NOTE_SOURCES))
+        self.tag_versions = TagVersionClient(session)
         # Optional: without a Watchtower URL and token, updates are installed
         # through Portainer's recreate endpoint exactly as before.
         watchtower_url = str(self.config.get(CONF_WATCHTOWER_URL) or "").strip()
@@ -238,6 +240,8 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
         registry_data_enabled = self.is_version_sensors_enabled() or self.is_update_sensors_enabled()
         include_registry = registry_data_enabled and (now - self._last_registry_check >= interval)
         if include_registry:
+            if getattr(self, "tag_versions", None):
+                self.tag_versions.clear_cache()
             self._last_registry_check = now
             # A fresh jitter each time, so a fixed interval does not drift into
             # lockstep with anything else polling the same registry.
@@ -306,6 +310,7 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                                 and current_digest != available_digest
                             )
                         data["available_version"] = await self.api.get_available_version(self.endpoint_id, image_name)
+                    await self._refresh_tag_versions(container_id, image_name, data, include_registry)
                 except Exception as err:
                     _LOGGER.debug("Failed to refresh image data for %s: %s", container_id, err)
                 image_data[container_id] = {**self.image_data.get(container_id, {}), **data}
@@ -333,6 +338,33 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
             # After the availability map is final, so a restart restores the
             # update states exactly as the sweep left them.
             await self._async_save_state()
+
+    async def _refresh_tag_versions(
+        self, container_id: str, image_name: str | None, data: dict[str, Any], include_registry: bool
+    ) -> None:
+        """Versions from the tags sharing the image digests, for images without a version label.
+
+        Looked up on every sweep and whenever the running image changed - after an
+        update the new version shows right away instead of six hours later.
+        """
+        client = getattr(self, "tag_versions", None)
+        if client is None or not image_name or data.get("oci_version"):
+            return
+        previous = self.image_data.get(container_id, {})
+        current = data.get("current_digest")
+        current = None if not current or str(current).startswith("unknown") else current
+        if not include_registry and previous.get("tag_version_for") == current:
+            return
+        available = data.get("available_digest") or previous.get("available_digest")
+        try:
+            registry, repository, _reference, _pinned = self.api.images._parse_image_ref(image_name)
+            installed_version, available_version = await client.versions(registry, repository, [current, available])
+        except Exception as err:
+            _LOGGER.debug("Tag version lookup for %s failed: %s", image_name, err)
+            return
+        data["tag_version"] = installed_version
+        data["available_tag_version"] = available_version
+        data["tag_version_for"] = current
 
     async def _refresh_endpoint_name(self) -> None:
         """Look up the Portainer environment name once per config entry."""
