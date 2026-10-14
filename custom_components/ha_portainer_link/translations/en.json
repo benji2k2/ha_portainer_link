@@ -35,5 +35,39 @@
       "already_configured": "This Portainer environment is already configured.",
       "reconfigure_successful": "Credentials updated."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options",
+        "data": {
+          "update_interval": "Polling interval (minutes)",
+          "update_check_interval": "Registry check every (minutes)",
+          "enable_stack_view": "Stacks as separate devices",
+          "enable_resource_sensors": "CPU and memory sensors",
+          "enable_version_sensors": "Version sensors",
+          "enable_update_sensors": "Update entities",
+          "enable_stack_buttons": "Stack buttons",
+          "enable_container_buttons": "Container buttons",
+          "enable_healthcheck_sensors": "Healthcheck sensors",
+          "enable_instance_device": "Device for the Portainer environment",
+          "enable_prune_button": "\"Prune images\" button",
+          "prune_all_unused": "Prune removes all unused images",
+          "verify_ssl": "Verify SSL certificate",
+          "notify_service": "Notification service",
+          "enable_release_notes": "Load release notes from GitHub",
+          "release_note_sources": "Sources for images without a source label",
+          "watchtower_url": "Watchtower URL (optional)",
+          "watchtower_token": "Watchtower token"
+        },
+        "data_description": {
+          "update_check_interval": "Docker Hub counts every check as a pull; 360 = every 6 hours.",
+          "enable_release_notes": "Reads the image label org.opencontainers.image.source and shows the GitHub releases since the running image.",
+          "release_note_sources": "Pairs image=owner/repo, comma separated, e.g. redis=redis/redis, headscale/headscale=juanfont/headscale. Takes precedence over the label.",
+          "watchtower_url": "Leave empty to install updates through Portainer as before. With a URL, Watchtower on the Docker host installs them (HTTP API with the \"update\" endpoint) - which also works for Portainer itself, its agent and the proxy in front of it.",
+          "watchtower_token": "Not shown again; leave empty to keep the stored token."
+        }
+      }
+    }
   }
 }

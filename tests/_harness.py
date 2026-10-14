@@ -92,7 +92,7 @@ def _install_stubs() -> None:
     _module(
         "homeassistant.components.update",
         UpdateEntity=object,
-        UpdateEntityFeature=types.SimpleNamespace(INSTALL=1),
+        UpdateEntityFeature=types.SimpleNamespace(INSTALL=1, PROGRESS=4, RELEASE_NOTES=16),
     )
 
     # "from homeassistant.helpers import device_registry" resolves an attribute,

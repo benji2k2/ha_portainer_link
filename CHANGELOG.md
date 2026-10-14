@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-14
+
+### Added
+- Added release notes to the update entities. The repository comes from the image's `org.opencontainers.image.source` label, or from a new *Release note sources* option (`image=owner/repo` pairs) for images without one. The dialog shows the GitHub releases between the running and the available image: chosen by the images' version labels where the available image names a release, by their build dates otherwise, and limited to the version's major line once one is known - Traefik, for example, publishes v2.11 and v3 releases on the same day. A new image without a new release says it is most likely a rebuild. Releases are cached for six hours per repository and only fetched when the dialog opens. The entities also carry a `release_url` and a `title`.
+- Added an optional way to install updates through Watchtower on the Docker host. With a Watchtower URL and token in the options, the install action asks Watchtower to update exactly that container (`async=true`) and waits until it runs a new image. Portainer's recreate endpoint cannot replace the containers Portainer itself depends on - Portainer, its agent, or the proxy in front of it go away in the middle of the call - while Watchtower finishes on its own. Without these options nothing changes. The token is never shown again in the form; an empty field keeps it.
+- The update entities report their progress while installing, through either way.
+- Added translations for the options dialog, which so far showed raw field names.
+
+### Changed
+- The update entities show the version from the image label next to the image id, for example `v3.7.14 (93c91251e746)`, and do so whether or not an update is available; without an update they previously showed the tag, which mostly read `latest`. The id stays in because updates are decided on image ids and two images can carry the same version. Whether an update is newer is decided by the registry comparison, not by comparing these strings.
+- An update installed between two registry sweeps - from Home Assistant, by Watchtower or by hand - clears as soon as the container runs the image the last sweep found, instead of staying visible until the next sweep.
+- The new image's labels come from the config blob the registry check already fetches, so this costs no additional registry request.
+
+### Fixed
+- Docker timestamps with fewer than six fractional digits (Go drops trailing zeros, e.g. `.5Z`) were not parsed on Python versions before 3.11.
+
 ## [0.9.3] - 2026-09-30
 
 ### Added

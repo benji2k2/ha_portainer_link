@@ -24,10 +24,14 @@ from .const import (
     CONF_HOST,
     CONF_NOTIFY_SERVICE,
     CONF_PASSWORD,
+    CONF_RELEASE_NOTE_SOURCES,
+    CONF_RELEASE_NOTES,
     CONF_UPDATE_CHECK_INTERVAL,
     CONF_UPDATE_INTERVAL,
     CONF_USERNAME,
     CONF_VERIFY_SSL,
+    CONF_WATCHTOWER_TOKEN,
+    CONF_WATCHTOWER_URL,
     DEFAULT_OPTIONS,
     DOMAIN,
 )
@@ -120,10 +124,16 @@ class PortainerOptionsFlowHandler(config_entries.OptionsFlow):
         self._config_entry = config_entry
 
     async def async_step_init(self, user_input=None):
+        current = {**DEFAULT_OPTIONS, **self._config_entry.options}
         if user_input is not None:
+            # The token is never shown again; an empty field keeps the stored one,
+            # as the reconfigure step does for Portainer's credentials.
+            user_input = {
+                **user_input,
+                CONF_WATCHTOWER_TOKEN: user_input.get(CONF_WATCHTOWER_TOKEN) or current[CONF_WATCHTOWER_TOKEN],
+            }
             return self.async_create_entry(title="", data=user_input)
 
-        current = {**DEFAULT_OPTIONS, **self._config_entry.options}
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
@@ -175,6 +185,13 @@ class PortainerOptionsFlowHandler(config_entries.OptionsFlow):
                     ): bool,
                     vol.Required(CONF_VERIFY_SSL, default=current[CONF_VERIFY_SSL]): bool,
                     vol.Optional(CONF_NOTIFY_SERVICE, default=current[CONF_NOTIFY_SERVICE]): str,
+                    vol.Required(CONF_RELEASE_NOTES, default=current[CONF_RELEASE_NOTES]): bool,
+                    vol.Optional(
+                        CONF_RELEASE_NOTE_SOURCES,
+                        default=current[CONF_RELEASE_NOTE_SOURCES],
+                    ): str,
+                    vol.Optional(CONF_WATCHTOWER_URL, default=current[CONF_WATCHTOWER_URL]): str,
+                    vol.Optional(CONF_WATCHTOWER_TOKEN): str,
                 }
             ),
         )

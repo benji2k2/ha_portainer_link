@@ -25,6 +25,9 @@ collected — it runs every check first, so one break does not hide the rest.
 | `test_ratelimit.py` | Anfragezahl pro Image, Token-Wiederverwendung, Persistenz |
 | `test_options.py` | jede Option im Formular und ausgewertet |
 | `test_reconfigure.py` | Zugangsdaten neu konfigurieren: Formular ohne Geheimnisse, leeres Feld behält den Wert, Host/Endpoint fest, Fehler speichert nichts |
+| `test_releasenotes.py` | Quelle aus Label/Zuordnung, Auswahl nach Version und Build-Datum, parallele Hauptversionen, Darstellung, Cache |
+| `test_watchtower.py` | Watchtower-Aufruf und Fehlerfälle, Installation über Watchtower inkl. Warten/Timeout, ohne Watchtower wie bisher |
+| `test_imagelabels.py` | OCI-Labels lokal und aus dem Config-Blob, Update erlischt nach Installation, Token im Optionsformular |
 | `test_prune_count.py`, `test_prunereport.py`, `test_buttonresult.py` | Prune-Zählung und Button-Rückmeldung |
 
 Sie liegen hier statt in einem temporären Verzeichnis, weil eine frühere Fassung

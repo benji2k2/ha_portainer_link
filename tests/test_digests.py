@@ -94,7 +94,16 @@ c("summary nennt beide", e.release_summary,
   "Image id 93c91251e746 -> aabbccdd1122. Manifest digest c7c2a971d39b")
 e2 = ent({"current_config_digest": CONFIG, "available_config_digest": CONFIG,
           "available_digest": IDX_NEU, "current_version": "latest"}, False)
-c("ohne update zeigt die version", e2.installed_version, "latest")
+# Ohne Update stand hier frueher der Tag ("latest") - sagt nichts. Seit 0.10.0
+# wie im Update-Fall: Version aus dem OCI-Label, sonst die Image-ID.
+c("ohne update zeigt die image-id statt 'latest'", e2.installed_version, "93c91251e746")
+c("ohne update: verfuegbar = installiert", e2.latest_version, e2.installed_version)
+e3 = ent({"current_config_digest": CONFIG, "available_config_digest": NEUE_ID,
+          "oci_version": "v3.7.14", "available_oci_version": "v3.7.15"}, True)
+c("mit oci-label: version + id", e3.installed_version, "v3.7.14 (93c91251e746)")
+c("mit oci-label: neue version + id", e3.latest_version, "v3.7.15 (aabbccdd1122)")
+c("ob neuer entscheidet die registry, nicht der string", e3.version_is_newer("a", "b"), True)
+c("ohne update nie neuer", e2.version_is_newer("a", "b"), False)
 c("summary sagt unchanged", e2.release_summary,
   "Image id 93c91251e746, unchanged. Manifest digest c7c2a971d39b")
 

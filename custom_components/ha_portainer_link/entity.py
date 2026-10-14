@@ -99,15 +99,16 @@ def parse_docker_time(value: Any) -> dt.datetime | None:
     """Parse a docker timestamp into an aware datetime.
 
     Docker reports nanoseconds, which fromisoformat rejects - it accepts at most
-    microseconds - so the fractional part is truncated to six digits. The zero
-    value docker uses for "never" is treated as absent.
+    microseconds - so the fractional part is truncated to six digits. Go also
+    drops trailing zeros (".5Z"), which older Pythons reject, so it is padded to
+    six as well. The zero value docker uses for "never" is treated as absent.
     """
     if not value:
         return None
     text = str(value).strip()
     if text.startswith("0001-"):
         return None
-    text = re.sub(r"(\.\d{6})\d+", r"\1", text)
+    text = re.sub(r"\.(\d+)", lambda m: "." + m.group(1)[:6].ljust(6, "0"), text, count=1)
     try:
         parsed = dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
     except ValueError:

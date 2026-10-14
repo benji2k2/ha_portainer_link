@@ -219,6 +219,7 @@ class PortainerImageAPI:
             "manifest_digest": None,
             "config_digest": None,
             "created": None,
+            "labels": {},
             "child_digests": set(),
         }
         try:
@@ -252,6 +253,9 @@ class PortainerImageAPI:
             if want_created and config_digest:
                 blob, _ = await self._registry_get_json(f"{base}/blobs/{config_digest}", repository)
                 state["created"] = (blob or {}).get("created")
+                # The same blob carries the image labels, so the new image's
+                # version and source repository come without another request.
+                state["labels"] = ((blob or {}).get("config") or {}).get("Labels") or {}
         except Exception as err:
             _LOGGER.debug("Failed to resolve remote image state for %s: %s", image_name, err)
         return state

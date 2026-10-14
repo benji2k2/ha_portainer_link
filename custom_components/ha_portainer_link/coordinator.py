@@ -23,12 +23,18 @@ from .const import (
     CONF_ENABLE_STACK_VIEW,
     CONF_ENABLE_UPDATE_SENSORS,
     CONF_ENABLE_VERSION_SENSORS,
+    CONF_RELEASE_NOTE_SOURCES,
+    CONF_RELEASE_NOTES,
     CONF_UPDATE_CHECK_INTERVAL,
     CONF_UPDATE_INTERVAL,
+    CONF_WATCHTOWER_TOKEN,
+    CONF_WATCHTOWER_URL,
     DEFAULT_OPTIONS,
 )
 from .entity import container_name, is_container_running, stable_container_key, stack_info_from_container
 from .portainer_api import PortainerAPI
+from .release_notes import SOURCE_LABEL, VERSION_LABEL, ReleaseNotesClient, parse_overrides
+from .watchtower import WatchtowerClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,6 +79,18 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
         # Spread the first due sweep after a restart so several instances, or a
         # host rebooting, do not all hit the registry in the same second.
         self._registry_jitter = random.uniform(0, 300)
+        session = getattr(api, "session", None)
+        self.release_notes = ReleaseNotesClient(session) if self.config.get(CONF_RELEASE_NOTES) else None
+        self.release_note_sources = parse_overrides(self.config.get(CONF_RELEASE_NOTE_SOURCES))
+        # Optional: without a Watchtower URL and token, updates are installed
+        # through Portainer's recreate endpoint exactly as before.
+        watchtower_url = str(self.config.get(CONF_WATCHTOWER_URL) or "").strip()
+        watchtower_token = str(self.config.get(CONF_WATCHTOWER_TOKEN) or "").strip()
+        self.watchtower = (
+            WatchtowerClient(session, watchtower_url, watchtower_token)
+            if watchtower_url and watchtower_token
+            else None
+        )
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch fresh data from Portainer."""
@@ -247,6 +265,9 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                         if image_info:
                             data["current_version"] = self.api.extract_version_from_image(image_info)
                             data["image_created"] = image_info.get("Created")
+                            labels = (image_info.get("Config") or {}).get("Labels") or {}
+                            data["oci_version"] = labels.get(VERSION_LABEL)
+                            data["oci_source"] = labels.get(SOURCE_LABEL)
                         current_digest = await self.api.get_current_digest(self.endpoint_id, container_id)
                         if current_digest:
                             data["current_digest"] = current_digest
@@ -272,6 +293,10 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                             data["available_config_digest"] = remote_config
                             if created := remote.get("created"):
                                 data["available_image_created"] = created
+                            remote_labels = remote.get("labels") or {}
+                            data["available_oci_version"] = remote_labels.get(VERSION_LABEL)
+                            if remote_labels.get(SOURCE_LABEL):
+                                data["available_oci_source"] = remote_labels[SOURCE_LABEL]
                             update_availability[container_id] = bool(image_id and remote_config != image_id)
                         elif available_digest:
                             current_digest = data.get("current_digest")
@@ -287,6 +312,15 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
 
         await asyncio.gather(*(refresh_one(container_id) for container_id in self.containers))
         self.image_data = image_data
+        # An update installed between two sweeps - from here, by Watchtower or
+        # by hand - leaves the container on exactly the image the last sweep
+        # found. Clearing it now beats showing a stale update for hours.
+        for container_id, data in image_data.items():
+            current = data.get("current_config_digest")
+            if current and current == data.get("available_config_digest"):
+                update_availability[container_id] = False
+                if container_id in self.update_availability:
+                    self.update_availability[container_id] = False
         if include_registry and self.is_update_sensors_enabled():
             self.update_availability = {
                 container_id: bool(update_availability.get(container_id, False))

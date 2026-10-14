@@ -66,6 +66,9 @@ Options can be changed from the Home Assistant integration options dialog. Chang
 | Update check interval | 360 minutes | Registry/image metadata check interval. |
 | SSL verification | Enabled | Verifies the Portainer TLS certificate when enabled. |
 | Notify service | Empty | Optional notify target like `notify.mobile_app_phone`; persistent notifications are used when empty. |
+| Release notes | Enabled | Loads the GitHub releases between the running and the available image into the update dialog. |
+| Release note sources | Empty | `image=owner/repo` pairs, comma separated, for images without an `org.opencontainers.image.source` label. Takes precedence over the label. |
+| Watchtower URL / token | Empty | Optional. When set, updates are installed by Watchtower on the Docker host instead of Portainer. See below. |
 
 ## Update Detection
 
@@ -85,6 +88,36 @@ Explicit user actions can still pull images and recreate containers or stacks:
 - Container pull/update button.
 - Stack update button.
 - Native `update` entity install action.
+
+## Release Notes
+
+The update dialog shows the GitHub releases published since the running image. The repository comes from the image's
+`org.opencontainers.image.source` label, or from the *Release note sources* option for images without one, for example
+`redis=redis/redis, headscale/headscale=juanfont/headscale`.
+
+Releases are chosen by the images' `org.opencontainers.image.version` labels when the available image names a release,
+and by the two images' build dates otherwise. When a version is known, only releases of its major line are shown, so a
+project maintaining an older line in parallel does not mix the two. A new image without a new release - a rebuild on an
+updated base image, for example - says so instead of showing an unrelated release.
+
+GitHub allows 60 unauthenticated requests per hour and address; releases are cached for six hours per repository and
+only fetched when the dialog is opened.
+
+## Installing Through Watchtower (optional)
+
+Without further setup, the install action uses Portainer's recreate endpoint. That fails for the containers Portainer
+depends on: Portainer itself, its agent on a remote host, or a reverse proxy in front of it go away in the middle of the
+call.
+
+With a [Watchtower](https://github.com/nicholas-fedor/watchtower) URL and token in the options, the install action asks
+Watchtower on that Docker host to update exactly this container (`POST /v1/update?container=<name>&async=true`) and
+waits until the container runs a new image (up to ten minutes). Watchtower works next to the Docker socket and finishes
+on its own, so this works for every container, Watchtower included.
+
+Watchtower needs its HTTP API with the `update` endpoint (`WATCHTOWER_HTTP_API_ENDPOINTS=update`) and a token
+(`WATCHTOWER_HTTP_API_TOKEN`). Note that enabling the endpoint stops Watchtower's own scheduled runs unless
+`WATCHTOWER_HTTP_API_PERIODIC_POLLS` is set, and that a container marked `monitor-only` - by label or globally - is never
+updated, not even on request. The entity's `installs_via` attribute shows which way is configured.
 
 ## Services
 

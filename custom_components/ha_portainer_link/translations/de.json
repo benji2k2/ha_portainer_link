@@ -35,5 +35,39 @@
       "already_configured": "Diese Portainer-Umgebung ist bereits eingerichtet.",
       "reconfigure_successful": "Zugangsdaten aktualisiert."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Optionen",
+        "data": {
+          "update_interval": "Abfrageintervall (Minuten)",
+          "update_check_interval": "Registry-Prüfung alle (Minuten)",
+          "enable_stack_view": "Stacks als eigene Geräte",
+          "enable_resource_sensors": "CPU- und Speicher-Sensoren",
+          "enable_version_sensors": "Versions-Sensoren",
+          "enable_update_sensors": "Update-Entitäten",
+          "enable_stack_buttons": "Stack-Schaltflächen",
+          "enable_container_buttons": "Container-Schaltflächen",
+          "enable_healthcheck_sensors": "Healthcheck-Sensoren",
+          "enable_instance_device": "Gerät für die Portainer-Umgebung",
+          "enable_prune_button": "Schaltfläche „Images aufräumen“",
+          "prune_all_unused": "Aufräumen entfernt alle unbenutzten Images",
+          "verify_ssl": "SSL-Zertifikat prüfen",
+          "notify_service": "Benachrichtigungsdienst",
+          "enable_release_notes": "Release Notes von GitHub laden",
+          "release_note_sources": "Quellen für Images ohne Quellangabe",
+          "watchtower_url": "Watchtower-URL (optional)",
+          "watchtower_token": "Watchtower-Token"
+        },
+        "data_description": {
+          "update_check_interval": "Jede Prüfung zählt bei Docker Hub als Abruf; 360 = alle 6 Stunden.",
+          "enable_release_notes": "Liest das Image-Label org.opencontainers.image.source und zeigt die GitHub-Releases seit dem laufenden Image.",
+          "release_note_sources": "Paare Image=Besitzer/Repository, durch Komma getrennt, z. B. redis=redis/redis, headscale/headscale=juanfont/headscale. Hat Vorrang vor dem Label.",
+          "watchtower_url": "Leer lassen, um Updates wie bisher über Portainer zu installieren. Mit URL installiert Watchtower auf dem Docker-Host (HTTP-API mit Endpunkt „update“) – geht auch für Portainer selbst, seinen Agent und den Proxy davor.",
+          "watchtower_token": "Wird nicht wieder angezeigt; leer lassen behält den gespeicherten Token."
+        }
+      }
+    }
   }
 }

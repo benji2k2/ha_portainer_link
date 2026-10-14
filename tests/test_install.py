@@ -19,6 +19,8 @@ def entity(api):
     e = update.ContainerUpdateEntity.__new__(update.ContainerUpdateEntity)
     e.coordinator = types.SimpleNamespace(api=api, async_request_refresh=lambda: asyncio.sleep(0))
     e.endpoint_id = 2
+    e._installing = False
+    e.async_write_ha_state = lambda: None
     type(e).current_container_id = property(lambda s: "cid")
     type(e).container_name = property(lambda s: "plex")
     return e
