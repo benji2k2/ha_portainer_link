@@ -82,8 +82,9 @@ async def main():
     def entity(api, watchtower):
         e = update.ContainerUpdateEntity.__new__(update.ContainerUpdateEntity)
         e.refreshed, e.states = 0, []
-        async def refresh(): e.refreshed += 1
-        e.coordinator = types.SimpleNamespace(api=api, watchtower=watchtower, async_request_refresh=refresh)
+        async def refresh():
+            e.refreshed += 1; e.states.append("refresh")
+        e.coordinator = types.SimpleNamespace(api=api, watchtower=watchtower, async_refresh=refresh)
         e.endpoint_id = 3
         e._installing = False
         e.async_write_ha_state = lambda: e.states.append(e.in_progress)
@@ -91,13 +92,15 @@ async def main():
         type(e).container_name = property(lambda s: "traefik")
         return e
 
-    neu = [{"Names": ["/traefik"], "ImageID": "sha256:neu"}]
-    api = Api([OSError("portainer kurz weg"), [], [{"Names": ["/traefik"], "ImageID": "sha256:alt"}], neu])
+    neu = [{"Names": ["/traefik"], "ImageID": "sha256:neu", "State": "running"}]
+    erstellt = [{"Names": ["/traefik"], "ImageID": "sha256:neu", "State": "created"}]
+    api = Api([OSError("portainer kurz weg"), [], [{"Names": ["/traefik"], "ImageID": "sha256:alt"}], erstellt, neu])
     w = W(); e = entity(api, w)
     await e.async_install(None, False)
     c("watchtower mit dem namen aufgerufen", w.names, ["traefik"])
+    c("wartet bis der neue container laeuft (created reicht nicht)", api.polls, [])
     c("portainer-recreate NICHT benutzt", api.recreated, [])
-    c("fortschritt an, dann aus", e.states, [True, False])
+    c("fortschritt an, erst aktualisieren, dann aus", e.states, [True, "refresh", False])
     c("danach aktualisiert", e.refreshed, 1)
 
     update.WATCHTOWER_TIMEOUT = 0
@@ -118,7 +121,7 @@ async def main():
     api = Api([]); e = entity(api, None)
     await e.async_install(None, False)
     c("recreate benutzt", api.recreated, [(3, "cid")])
-    c("fortschritt an, dann aus", e.states, [True, False])
+    c("fortschritt an, erst aktualisieren, dann aus", e.states, [True, "refresh", False])
 
     c.section("entitaet zeigt den weg an")
     e = entity(Api([]), W())

@@ -86,10 +86,12 @@ async def main():
         f.async_show_form = lambda **kw: {"type": "form", **kw}
         return f
     form = await flow({"watchtower_token": "geheim"}).async_step_init()
-    defaults = {getattr(k, "schema", k): getattr(k, "default", None) for k in form["data_schema"]}
+    schema = getattr(form["data_schema"], "schema", form["data_schema"])
+    defaults = {getattr(k, "schema", k): getattr(k, "default", None) for k in schema}
     c.true("token-feld vorhanden", "watchtower_token" in defaults)
     shown = defaults.get("watchtower_token")
-    c("token wird nicht vorbelegt", None if callable(shown) or shown is None else shown, None)
+    unset = callable(shown) or shown is None or type(shown).__name__ == "Undefined"   # je nach voluptuous-Version
+    c("token wird nicht vorbelegt", None if unset else shown, None)
     await flow({"watchtower_token": "geheim"}).async_step_init({"watchtower_url": "https://wt", "watchtower_token": ""})
     c("leeres feld behaelt den token", created["watchtower_token"], "geheim")
     await flow({"watchtower_token": "geheim"}).async_step_init({"watchtower_url": "https://wt", "watchtower_token": "neu"})

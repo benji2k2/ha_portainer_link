@@ -255,12 +255,16 @@ class ContainerUpdateEntity(BaseContainerEntity, UpdateEntity):
                 except PortainerError as err:
                     raise HomeAssistantError(f"Could not update {self.container_name}: {err}") from err
         finally:
-            self._installing = False
-            self.async_write_ha_state()
-            await self.coordinator.async_request_refresh()
+            # Refresh first: clearing the progress before the new image is known
+            # showed "update available" again for the seconds the refresh takes.
+            try:
+                await self.coordinator.async_refresh()
+            finally:
+                self._installing = False
+                self.async_write_ha_state()
 
     async def _install_with_watchtower(self, watchtower, image_before: str | None) -> None:
-        """Trigger Watchtower, then wait until the container runs a different image.
+        """Trigger Watchtower, then wait until the container runs again on a different image.
 
         Watchtower answers before it replaces anything, so the result has to be
         observed: the container comes back under a new id with a new image.
@@ -282,7 +286,14 @@ class ContainerUpdateEntity(BaseContainerEntity, UpdateEntity):
                 _LOGGER.debug("Polling after a Watchtower update failed: %s", err)
                 continue
             current = next((c for c in containers if container_name(c) == self.container_name), None)
-            if current and current.get("ImageID") and current.get("ImageID") != image_before:
+            # Watchtower creates the new container before starting it; returning
+            # at "created" left the entity showing a stopped container.
+            if (
+                current
+                and current.get("ImageID")
+                and current.get("ImageID") != image_before
+                and current.get("State") == "running"
+            ):
                 return
         raise HomeAssistantError(
             f"{self.container_name} still runs the old image after {WATCHTOWER_TIMEOUT // 60} minutes; "

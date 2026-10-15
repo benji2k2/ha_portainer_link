@@ -17,7 +17,7 @@ class Api:
 
 def entity(api):
     e = update.ContainerUpdateEntity.__new__(update.ContainerUpdateEntity)
-    e.coordinator = types.SimpleNamespace(api=api, async_request_refresh=lambda: asyncio.sleep(0))
+    e.coordinator = types.SimpleNamespace(api=api, async_refresh=lambda: asyncio.sleep(0))
     e.endpoint_id = 2
     e._installing = False
     e.async_write_ha_state = lambda: None
