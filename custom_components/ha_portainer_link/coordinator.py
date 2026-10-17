@@ -140,6 +140,7 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
 
     def _process_containers(self, containers: list[dict[str, Any]]) -> None:
         """Normalize container list data into lookup maps."""
+        previous_ids = dict(self.stable_container_map)
         self.containers = {}
         self.container_stack_map = {}
         self.container_stack_info = {}
@@ -164,6 +165,28 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
             if stack_info.get("is_stack_container"):
                 self.container_stack_map[container_id] = stack_info["stack_name"]
             self.stable_container_map[stable_container_key(name, stack_info)] = container_id
+
+        self._carry_over_recreated(previous_ids)
+
+    def _carry_over_recreated(self, previous_ids: dict[str, str]) -> None:
+        """Hand the registry result of a replaced container to its successor.
+
+        Image data and update availability are keyed by Docker container id, and
+        recreating a container - `docker compose up -d` after a compose change,
+        a restore, anything but an image update - gives it a new one. Without
+        this the successor started with nothing and its update vanished until
+        the next registry sweep, hours later. The registry result belongs to
+        the image, so it is carried over; if the successor runs a different
+        image, the next refresh still compares it against what was found.
+        """
+        for key, new_id in self.stable_container_map.items():
+            old_id = previous_ids.get(key)
+            if not old_id or old_id == new_id or old_id in self.containers:
+                continue
+            if old_id in self.image_data and new_id not in self.image_data:
+                self.image_data[new_id] = self.image_data.pop(old_id)
+            if old_id in self.update_availability and new_id not in self.update_availability:
+                self.update_availability[new_id] = self.update_availability.pop(old_id)
 
     async def _refresh_metrics(self) -> None:
         """Refresh resource metrics with bounded concurrency."""
@@ -474,6 +497,12 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
             self.update_availability = {
                 key: bool(value) for key, value in stored["update_availability"].items()
             }
+        if isinstance(stored.get("stable_container_map"), dict):
+            # Lets the first refresh recognise a container recreated while
+            # Home Assistant was down.
+            self.stable_container_map = {
+                str(key): str(value) for key, value in stored["stable_container_map"].items()
+            }
 
     async def _async_save_state(self) -> None:
         """Persist what a restart would otherwise throw away."""
@@ -485,6 +514,7 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                     "last_registry_check": self._last_registry_check,
                     "image_data": self.image_data,
                     "update_availability": self.update_availability,
+                    "stable_container_map": getattr(self, "stable_container_map", {}),
                 }
             )
         except Exception as err:

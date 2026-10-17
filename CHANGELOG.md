@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.4] - 2026-10-17
+
+### Fixed
+- A recreated container no longer loses its update. Image data and update availability were keyed by the Docker container id, and recreating a container - `docker compose up -d` after a compose change, for example - gives it a new one, so the successor started empty and an available update vanished until the next registry sweep, up to six hours later; a notification due in between missed it. The registry result now passes to the container with the same name. The name-to-id mapping is saved with the other state, so a container recreated while Home Assistant was down keeps it too.
+
 ## [0.11.3] - 2026-10-17
 
 ### Fixed
