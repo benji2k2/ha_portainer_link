@@ -52,6 +52,31 @@ async def main():
     c("nach clear_cache neu geholt", len(s.calls), before + 1)
     c("http-fehler -> keine version", await tv.TagVersionClient(Session(429)).versions("registry-1.docker.io", "a/b", ["sha256:aa"]), [None])
 
+    c.section("gleiche plattform-images, anderer index (vector 17.10.)")
+    def img(arch, d): return {"architecture": arch, "os": "linux", "digest": d}
+    gleich = [img("amd64", "sha256:p1"), img("arm64", "sha256:p2"), img("arm", "sha256:p3")]
+    class Hub(Session):
+        def get(self, url, params=None):
+            self.calls.append((url, params))
+            return Resp(200, {"results": [
+                {"name": "nightly-2026-10-17-alpine", "digest": "sha256:n1", "images": [img("amd64", "sha256:n9")]},
+                {"name": "latest-alpine", "digest": "sha256:la", "images": gleich},
+                {"name": "0.X-alpine", "digest": "sha256:x0", "images": gleich},
+                {"name": "0.59.X-alpine", "digest": "sha256:x1", "images": gleich},
+                {"name": "0.59.0-alpine", "digest": "sha256:v0", "images": gleich + [img("unknown", "sha256:att")]},
+                # teilt nur amd64 (arm64 neu gebaut) -> zaehlt nicht
+                {"name": "0.58.0-alpine", "digest": "sha256:v8", "images": [img("amd64", "sha256:p1"), img("arm64", "sha256:q2"), img("arm", "sha256:p3")]},
+                {"name": "latest-debian", "digest": "sha256:ld", "images": [img("amd64", "sha256:d1")]},
+                {"name": "1.0.0", "digest": "sha256:solo"},
+            ]})
+    h = tv.TagVersionClient(Hub())
+    c("index ohne versions-tag -> ueber plattform-images", await h.versions("registry-1.docker.io", "timberio/vector", ["sha256:la"]), ["0.59.0"])
+    c("attestation (unknown) zaehlt nicht mit", await h.versions("registry-1.docker.io", "timberio/vector", ["sha256:v0"]), ["0.59.0"])
+    c("nur eine plattform gleich -> keine version", await h.versions("registry-1.docker.io", "timberio/vector", ["sha256:ld"]), [None])
+    c("tag ohne images-liste: wie bisher", await h.versions("registry-1.docker.io", "timberio/vector", ["sha256:solo"]), ["1.0.0"])
+    c("nightly ohne versions-zwilling", await h.versions("registry-1.docker.io", "timberio/vector", ["sha256:n1"]), [None])
+    c("eine anfrage fuer alles", len(h.session.calls), 1)
+
     c.section("coordinator schlaegt nur bei bedarf nach")
     class Client:
         def __init__(self): self.calls = []

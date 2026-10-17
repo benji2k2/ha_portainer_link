@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-10-17
+
+### Fixed
+- Images whose floating tag and versioned tag are pushed as separate multi-platform indexes now show a version too. `timberio/vector:latest-alpine` and `0.59.0-alpine` have different index digests but the very same image for every platform, so so far only the image id showed. Docker Hub lists the platform images of each tag in the same request, and a tag built from an identical set of platform images now counts as well; a tag that shares only some platforms does not. Quay lists no platform images and is unchanged.
+
+## [0.11.1] - 2026-10-15
+
+### Fixed
+- Installing through Watchtower no longer shows "update available" again for a few seconds after it finished: the data is refreshed before the progress ends.
+- An install through Watchtower now waits until the new container is actually running. Before, it could finish while Watchtower had only created the container, which then showed as stopped until the next poll.
+
 ## [0.11.0] - 2026-10-14
 
 ### Added

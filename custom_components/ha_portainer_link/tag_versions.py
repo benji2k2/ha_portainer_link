@@ -40,25 +40,62 @@ def pick_version(tags: list[str]) -> str | None:
     return best
 
 
+class TagMap:
+    """Tags by digest, and by the set of platform images behind a digest.
+
+    Some projects push a floating tag and its versioned twin as separate
+    multi-platform indexes: `timberio/vector:latest-alpine` and `0.59.0-alpine`
+    have different index digests but the very same image for every platform.
+    Docker Hub lists those platform images per tag, so a tag whose index
+    matches nothing versioned still finds the tags built from identical images.
+    Only an identical set counts - a single shared platform could be a stale
+    one next to rebuilt others.
+    """
+
+    def __init__(self) -> None:
+        self.by_digest: dict[str, list[str]] = {}
+        self.platforms: dict[str, frozenset[str]] = {}
+        self.by_platforms: dict[frozenset[str], list[str]] = {}
+
+    def add(self, name: str | None, digest: str | None, images: list[dict] | None = None) -> None:
+        if not name or not digest:
+            return
+        self.by_digest.setdefault(digest, []).append(name)
+        platforms = frozenset(
+            image["digest"]
+            for image in images or []
+            if isinstance(image, dict) and image.get("digest") and image.get("architecture") != "unknown"
+        )
+        if platforms:
+            self.platforms.setdefault(digest, platforms)
+            self.by_platforms.setdefault(platforms, []).append(name)
+
+    def version(self, digest: str) -> str | None:
+        found = pick_version(self.by_digest.get(digest, []))
+        if found is None and digest in self.platforms:
+            found = pick_version(self.by_platforms.get(self.platforms[digest], []))
+        return found
+
+
 class TagVersionClient:
     """Look up the tags sharing a digest on Docker Hub and Quay."""
 
     def __init__(self, session) -> None:
         self.session = session
-        self._cache: dict[str, tuple[float, dict[str, list[str]] | None]] = {}
+        self._cache: dict[str, tuple[float, TagMap | None]] = {}
 
     @staticmethod
     def supports(registry: str) -> bool:
         return registry in ("registry-1.docker.io", "quay.io")
 
-    async def _digest_map(self, registry: str, repository: str) -> dict[str, list[str]] | None:
-        """digest -> tags, for the most recently updated tags of a repository."""
+    async def _digest_map(self, registry: str, repository: str) -> TagMap | None:
+        """The most recently updated tags of a repository, by digest."""
         key = f"{registry}/{repository}"
         cached = self._cache.get(key)
         if cached and time.time() - cached[0] < CACHE_SECONDS:
             return cached[1]
 
-        result: dict[str, list[str]] | None = None
+        result: TagMap | None = None
         try:
             if registry == "quay.io":
                 url = f"https://quay.io/api/v1/repository/{repository}/tag/"
@@ -69,12 +106,13 @@ class TagVersionClient:
             async with self.session.get(url, params=params) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    result = {}
+                    result = TagMap()
                     for tag in data.get("tags" if registry == "quay.io" else "results") or []:
-                        name = tag.get("name")
-                        digest = tag.get("manifest_digest" if registry == "quay.io" else "digest")
-                        if name and digest:
-                            result.setdefault(digest, []).append(name)
+                        result.add(
+                            tag.get("name"),
+                            tag.get("manifest_digest" if registry == "quay.io" else "digest"),
+                            tag.get("images"),
+                        )
                 else:
                     _LOGGER.debug("Tag list of %s: HTTP %s", key, resp.status)
         except Exception as err:
@@ -86,8 +124,8 @@ class TagVersionClient:
         """The version for each digest, None where no versioned tag shares it."""
         if not self.supports(registry) or not any(digests):
             return [None for _ in digests]
-        mapping = await self._digest_map(registry, repository) or {}
-        return [pick_version(mapping.get(d or "", [])) if d else None for d in digests]
+        mapping = await self._digest_map(registry, repository) or TagMap()
+        return [mapping.version(d) if d else None for d in digests]
 
     def clear_cache(self) -> None:
         self._cache.clear()
