@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.3] - 2026-10-17
+
+### Fixed
+- Release notes no longer list releases of side projects that share the image's repository. Vector publishes its dev tool as `vdev-v0.3.30` next to `v0.59.0`; such a tag has no version of its own, so it passed the major-line filter and showed up between two Vector versions. Once a version is known, a release now has to start with a version number; a bare major tag such as `v3` still counts.
+
 ## [0.11.2] - 2026-10-17
 
 ### Fixed

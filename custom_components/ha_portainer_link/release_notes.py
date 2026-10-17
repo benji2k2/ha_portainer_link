@@ -93,6 +93,19 @@ def _major(value: str | None) -> str | None:
     return match.group(1) if match else None
 
 
+def _same_line(tag: str | None, major: str) -> bool:
+    """Whether a release belongs to the image's major line.
+
+    A tag without a dotted version ("v3") still counts; one that does not start
+    with a version at all is a side project sharing the repository - Vector
+    publishes its dev tool as "vdev-v0.3.30" next to "v0.59.0".
+    """
+    found = _major(tag)
+    if found is not None:
+        return found == major
+    return bool(re.match(r"\d", _plain_version(tag)))
+
+
 def _published(release: dict[str, Any]) -> dt.datetime | None:
     return parse_docker_time(release.get("published_at") or release.get("created_at"))
 
@@ -118,7 +131,7 @@ def select_releases(
         r for r in releases
         if not r.get("draft")
         and (not r.get("prerelease") or (wanted and _plain_version(r.get("tag_name")) == wanted))
-        and (major is None or _major(r.get("tag_name")) in (None, major))
+        and (major is None or _same_line(r.get("tag_name"), major))
     ]
     candidates.sort(key=lambda r: _published(r) or dt.datetime.min.replace(tzinfo=dt.timezone.utc), reverse=True)
 

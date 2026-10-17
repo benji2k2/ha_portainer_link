@@ -67,6 +67,14 @@ c("datumsweg mit bekannter laufender version: nur v3", tags(rn.select_releases(
 c("ganz ohne version: beide (nicht entscheidbar)", tags(rn.select_releases(
   P, None, None, "2026-09-21T00:00:00Z", "2026-10-07T00:00:00Z")), ["v3.7.14", "v2.11.58"])
 
+c.section("nebenprojekt im selben repo (vector: vdev-v0.3.x)")
+V = [rel("vdev-v0.3.31", "2026-10-25T10:00:00Z"), rel("v0.60.0", "2026-10-20T10:00:00Z"),
+     rel("vdev-v0.3.30", "2026-10-09T10:00:00Z"), rel("v0.59.0", "2026-10-06T10:00:00Z"), rel("v0", "2026-10-05T10:00:00Z")]
+c("versionsweg: vdev raus", tags(rn.select_releases(V, "0.59.0", "0.60.0")), ["v0.60.0"])
+c("datumsweg mit bekannter version: vdev raus, v0 bleibt", tags(rn.select_releases(
+  V, "0.59.0", None, "2026-10-04T00:00:00Z", "2026-10-21T00:00:00Z")), ["v0.60.0", "v0.59.0", "v0"])
+c("laufend = verfuegbar: nur die eigene", tags(rn.select_releases(V, "0.59.0", "0.59.0")), ["v0.59.0"])
+
 c.section("darstellung")
 md = rn.render("o/r", [R[0]])
 c.true("ueberschrift mit datum", "## v3.7.16 (2026-10-20)" in md)
