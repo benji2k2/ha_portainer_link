@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.6] - 2026-10-22
+
+### Fixed
+- An image without a version label shows its version again after the registry re-pushed the tag's index without changing this platform's image. `redis:latest` got new indexes for all tags while the amd64 image stayed the same; no tag pointed at the old index any more, so the tag lookup found nothing and only the image id showed. When the running image is the available one - same config digest - it now takes the available image's version.
+
 ## [0.11.5] - 2026-10-22
 
 ### Fixed

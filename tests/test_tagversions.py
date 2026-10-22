@@ -101,6 +101,26 @@ async def main():
     await k._refresh_tag_versions("cid2", "traefik:latest", labelled, True)
     c("mit versions-label nie", len(k.tag_versions.calls), 2)
 
+    c.section("alter index ohne tag, gleiches image (redis 22.10.)")
+    class Neu:
+        def __init__(self): self.calls = []
+        async def versions(self, registry, repository, digests):
+            self.calls.append(tuple(digests))
+            return [None, "8.10.2"]
+    k.tag_versions = Neu(); k.image_data = {}
+    same = {"current_digest": "sha256:5c02", "available_digest": "sha256:97ec",
+            "current_config_digest": "sha256:8d51", "available_config_digest": "sha256:8d51"}
+    await k._refresh_tag_versions("r", "redis:latest", same, True)
+    c("installiert uebernimmt die verfuegbare version", same["tag_version"], "8.10.2")
+    other = {"current_digest": "sha256:5c02", "available_digest": "sha256:97ec",
+             "current_config_digest": "sha256:alt1", "available_config_digest": "sha256:8d51"}
+    await k._refresh_tag_versions("r2", "redis:latest", other, True)
+    c("anderes image -> keine geliehene version", other["tag_version"], None)
+    k.image_data = {"r3": {"available_config_digest": "sha256:8d51"}}
+    between = {"current_digest": "sha256:5c02", "current_config_digest": "sha256:8d51"}
+    await k._refresh_tag_versions("r3", "redis:latest", between, True)
+    c("config aus dem letzten sweep reicht", between["tag_version"], "8.10.2")
+
     c.section("anzeige in der update-entitaet")
     e = update.ContainerUpdateEntity.__new__(update.ContainerUpdateEntity)
     e.coordinator = types.SimpleNamespace(image_data={"cid": {"current_config_digest": "sha256:93c91251e746aa",

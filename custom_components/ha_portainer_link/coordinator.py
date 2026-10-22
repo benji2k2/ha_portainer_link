@@ -411,6 +411,15 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
         except Exception as err:
             _LOGGER.debug("Tag version lookup for %s failed: %s", image_name, err)
             return
+        if installed_version is None and available_version:
+            # The index can be re-pushed - other platforms rebuilt, attestations
+            # renewed - while this platform's image stays the same. No tag points
+            # at the old index then, but the image is the available one, and so
+            # is its version (redis:latest on 22.10.2026).
+            current_config = data.get("current_config_digest")
+            available_config = data.get("available_config_digest") or previous.get("available_config_digest")
+            if current_config and current_config == available_config:
+                installed_version = available_version
         data["tag_version"] = installed_version
         data["available_tag_version"] = available_version
         data["tag_version_for"] = current
