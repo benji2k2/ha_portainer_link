@@ -77,10 +77,41 @@ async def main():
     c("nightly ohne versions-zwilling", await h.versions("registry-1.docker.io", "timberio/vector", ["sha256:n1"]), [None])
     c("eine anfrage fuer alles", len(h.session.calls), 1)
 
+    c.section("eigenes plattform-image (python:alpine 22.10.)")
+    # alpine/3-alpine und 3.15.1-alpine: getrennte indexe, amd64 identisch, s390x nicht
+    py = [img("amd64", "sha256:a64"), img("arm64", "sha256:b64")]
+    class Py(Session):
+        def get(self, url, params=None):
+            self.calls.append((url, params))
+            return Resp(200, {"results": [
+                {"name": "alpine", "digest": "sha256:ia", "images": py + [img("s390x", "sha256:s1")]},
+                {"name": "3-alpine", "digest": "sha256:ia", "images": py + [img("s390x", "sha256:s1")]},
+                {"name": "alpine3.24", "digest": "sha256:ia", "images": py + [img("s390x", "sha256:s1")]},
+                {"name": "3.15.1-alpine", "digest": "sha256:ib", "images": py + [img("s390x", "sha256:s2")]},
+                {"name": "3.15-alpine3.24", "digest": "sha256:ic", "images": py + [img("s390x", "sha256:s3")]},
+                {"name": "3.15.1-alpine3.24", "digest": "sha256:ib", "images": py + [img("s390x", "sha256:s2")]},
+                {"name": "3.15.1-alpine3.23", "digest": "sha256:id", "images": [img("amd64", "sha256:a23")]},
+                {"name": "3.15.1", "digest": "sha256:deb", "images": [img("amd64", "sha256:d64")]},
+            ]})
+    pc = tv.TagVersionClient(Py())
+    c("ohne plattform: nur der index", await pc.versions("registry-1.docker.io", "library/python", ["sha256:ia"]), ["3"])
+    c("mit amd64-image: genaueste version", await pc.versions("registry-1.docker.io", "library/python", ["sha256:ia"], ["sha256:a64"]), ["3.15.1"])
+    c("laufend und verfuegbar", await pc.versions("registry-1.docker.io", "library/python", ["sha256:ia", "sha256:ib"],
+                                                 ["sha256:a64", "sha256:a64"]), ["3.15.1", "3.15.1"])
+    c("nur plattform bekannt", await pc.versions("registry-1.docker.io", "library/python", [None], ["sha256:a64"]), ["3.15.1"])
+    c("unbekanntes image: wie bisher", await pc.versions("registry-1.docker.io", "library/python", ["sha256:ia"], ["sha256:zz"]), ["3"])
+    c("vector: widerspruechliche versionen am gleichen amd64 -> wie bisher",
+      await h.versions("registry-1.docker.io", "timberio/vector", ["sha256:la"], ["sha256:p1"]), ["0.59.0"])
+    c("vector: nur amd64 gleich, versionen widersprechen sich -> keine",
+      await h.versions("registry-1.docker.io", "timberio/vector", ["sha256:ld"], ["sha256:p1"]), [None])
+    c("einig", tv.pick_agreed(["3", "3-alpine", "3.15.1-alpine", "3.15-alpine3.24", "alpine"]), "3.15.1")
+    c("uneinig", tv.pick_agreed(["0.58.0-alpine", "0.59.0-alpine"]), None)
+    c("v-praefix zaehlt nicht", tv.pick_agreed(["v3", "v3.15.0"]), "v3.15.0")
+
     c.section("coordinator schlaegt nur bei bedarf nach")
     class Client:
         def __init__(self): self.calls = []
-        async def versions(self, registry, repository, digests):
+        async def versions(self, registry, repository, digests, platforms=None):
             self.calls.append((registry, repository, tuple(digests)))
             return ["2.5.6", "2.5.7" if digests[1] == "sha256:bb" else "2.5.6"]
     k = co.PortainerDataUpdateCoordinator.__new__(co.PortainerDataUpdateCoordinator)
@@ -104,7 +135,7 @@ async def main():
     c.section("alter index ohne tag, gleiches image (redis 22.10.)")
     class Neu:
         def __init__(self): self.calls = []
-        async def versions(self, registry, repository, digests):
+        async def versions(self, registry, repository, digests, platforms=None):
             self.calls.append(tuple(digests))
             return [None, "8.10.2"]
     k.tag_versions = Neu(); k.image_data = {}
@@ -120,6 +151,18 @@ async def main():
     between = {"current_digest": "sha256:5c02", "current_config_digest": "sha256:8d51"}
     await k._refresh_tag_versions("r3", "redis:latest", between, True)
     c("config aus dem letzten sweep reicht", between["tag_version"], "8.10.2")
+
+    c.section("coordinator gibt die plattform-images mit")
+    class Plat:
+        def __init__(self): self.platforms = None
+        async def versions(self, registry, repository, digests, platforms=None):
+            self.platforms = platforms
+            return ["3.15.1", "3.15.1"]
+    k.tag_versions = Plat(); k.image_data = {"m": {"available_platform_digest": "sha256:a64"}}
+    md = {"current_digest": "sha256:ia", "current_platform_digest": "sha256:a64"}
+    await k._refresh_tag_versions("m", "python:alpine", md, True)
+    c("laufend aus dem lokalen image, verfuegbar aus dem letzten sweep", k.tag_versions.platforms, ["sha256:a64", "sha256:a64"])
+    c("version", md["tag_version"], "3.15.1")
 
     c.section("anzeige in der update-entitaet")
     e = update.ContainerUpdateEntity.__new__(update.ContainerUpdateEntity)

@@ -405,9 +405,15 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
         if not include_registry and previous.get("tag_version_for") == current:
             return
         available = data.get("available_digest") or previous.get("available_digest")
+        platforms = [
+            data.get("current_platform_digest"),
+            data.get("available_platform_digest") or previous.get("available_platform_digest"),
+        ]
         try:
             registry, repository, _reference, _pinned = self.api.images._parse_image_ref(image_name)
-            installed_version, available_version = await client.versions(registry, repository, [current, available])
+            installed_version, available_version = await client.versions(
+                registry, repository, [current, available], platforms
+            )
         except Exception as err:
             _LOGGER.debug("Tag version lookup for %s failed: %s", image_name, err)
             return

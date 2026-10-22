@@ -40,6 +40,28 @@ def pick_version(tags: list[str]) -> str | None:
     return best
 
 
+def _core(version: str) -> str:
+    return re.split(r"[-+]", version, maxsplit=1)[0].lstrip("v")
+
+
+def pick_agreed(tags: list[str]) -> str | None:
+    """The most specific version, if every version tag is a prefix of it.
+
+    "3", "3.15" and "3.15.1" agree; "0.58.0" next to "0.59.0" do not, and then
+    there is no telling which one an image shared by both belongs to.
+    """
+    best = pick_version(tags)
+    if best is None:
+        return None
+    top = _core(best)
+    for tag in tags:
+        if _VERSION_TAG.match(tag):
+            core = _core(tag)
+            if core != top and not top.startswith(core + "."):
+                return None
+    return best
+
+
 class TagMap:
     """Tags by digest, and by the set of platform images behind a digest.
 
@@ -50,12 +72,18 @@ class TagMap:
     matches nothing versioned still finds the tags built from identical images.
     Only an identical set counts - a single shared platform could be a stale
     one next to rebuilt others.
+
+    That caution is about the other platforms. When the caller knows which
+    platform image it runs, a tag carrying that very image is the same software
+    for it: `python:alpine` and `3.15.1-alpine` sit in different indexes whose
+    amd64 images are identical, while another platform differs.
     """
 
     def __init__(self) -> None:
         self.by_digest: dict[str, list[str]] = {}
         self.platforms: dict[str, frozenset[str]] = {}
         self.by_platforms: dict[frozenset[str], list[str]] = {}
+        self.by_image: dict[str, list[str]] = {}
 
     def add(self, name: str | None, digest: str | None, images: list[dict] | None = None) -> None:
         if not name or not digest:
@@ -69,9 +97,15 @@ class TagMap:
         if platforms:
             self.platforms.setdefault(digest, platforms)
             self.by_platforms.setdefault(platforms, []).append(name)
+        for image in platforms:
+            self.by_image.setdefault(image, []).append(name)
 
-    def version(self, digest: str) -> str | None:
-        found = pick_version(self.by_digest.get(digest, []))
+    def version(self, digest: str | None, platform: str | None = None) -> str | None:
+        """The version of the tags of this index, refined by those carrying this platform image."""
+        tags = self.by_digest.get(digest or "", [])
+        if platform and (agreed := pick_agreed(tags + self.by_image.get(platform, []))):
+            return agreed
+        found = pick_version(tags)
         if found is None and digest in self.platforms:
             found = pick_version(self.by_platforms.get(self.platforms[digest], []))
         return found
@@ -120,12 +154,19 @@ class TagVersionClient:
         self._cache[key] = (time.time(), result)
         return result
 
-    async def versions(self, registry: str, repository: str, digests: list[str | None]) -> list[str | None]:
-        """The version for each digest, None where no versioned tag shares it."""
-        if not self.supports(registry) or not any(digests):
+    async def versions(
+        self, registry: str, repository: str, digests: list[str | None], platforms: list[str | None] | None = None
+    ) -> list[str | None]:
+        """The version for each digest, None where no versioned tag shares it.
+
+        `platforms` holds the platform image digest running behind each index
+        digest, where known; it lets tags count that carry the same image.
+        """
+        platforms = platforms or [None for _ in digests]
+        if not self.supports(registry) or not (any(digests) or any(platforms)):
             return [None for _ in digests]
         mapping = await self._digest_map(registry, repository) or TagMap()
-        return [mapping.version(d) if d else None for d in digests]
+        return [mapping.version(d, p) if d or p else None for d, p in zip(digests, platforms)]
 
     def clear_cache(self) -> None:
         self._cache.clear()

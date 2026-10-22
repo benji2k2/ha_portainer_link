@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.8] - 2026-10-22
+
+### Fixed
+- An image without a version label shows its full version when the registry keeps the versioned tag in a separate index. `python:alpine` and `3-alpine` share one index, `3.15.1-alpine` sits in another with the very same amd64 image but a different image for another platform; only the shared index counted, so the version read `3`. Tags carrying the platform image the container actually runs now count too - the same bytes are the same software for this host - and the most specific version wins, `3.15.1`. They count only when they agree with each other: if one platform image appears under two different versions, the lookup stays as before.
+
 ## [0.11.7] - 2026-10-22
 
 ### Fixed
