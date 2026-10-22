@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.7] - 2026-10-22
+
+### Fixed
+- The Current Version sensor no longer shows the build date as the version. The labels were read from the top level of the image inspect, where Docker does not put them - they live under `Config` - so `org.opencontainers.image.version` was never found and the sensor fell back to the build date, `2026.10.22` for example. Both version sensors now follow the update entity: the image's version label, then the version the registry maps the tag to, then the tag. Without any of these the sensor shows the short image id. The build date keeps its own sensor, Image Built.
+
 ## [0.11.6] - 2026-10-22
 
 ### Fixed

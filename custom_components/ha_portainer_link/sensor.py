@@ -205,7 +205,9 @@ class ContainerCurrentVersionSensor(PortainerContainerSensor):
 
     @property
     def native_value(self):
-        return self.image_value("current_version")
+        # Same order as the update entity: image label, then the tag the registry maps the image to.
+        return (self.image_value("oci_version") or self.image_value("tag_version")
+                or self.image_value("current_version"))
 
 
 class ContainerAvailableVersionSensor(PortainerContainerSensor):
@@ -215,7 +217,8 @@ class ContainerAvailableVersionSensor(PortainerContainerSensor):
 
     @property
     def native_value(self):
-        return self.image_value("available_version")
+        return (self.image_value("available_oci_version") or self.image_value("available_tag_version")
+                or self.image_value("available_version"))
 
 
 class DigestSensor(PortainerContainerSensor):

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import logging
 import re
 import time
@@ -448,14 +447,18 @@ class PortainerImageAPI:
         return None
 
     def extract_version_from_image(self, image_data: dict[str, Any]) -> str:
-        """Extract a human-readable version from local image metadata."""
+        """Extract a human-readable version from local image metadata.
+
+        Image inspect carries the labels under Config. The build date is no
+        version; it has its own sensor (Image Built).
+        """
         try:
             for tag in image_data.get("RepoTags") or []:
                 if ":" in tag:
                     version = tag.rsplit(":", 1)[-1]
                     if version and version != "latest":
                         return version
-            labels = image_data.get("Labels") or {}
+            labels = (image_data.get("Config") or {}).get("Labels") or image_data.get("Labels") or {}
             for label in (
                 "org.opencontainers.image.version",
                 "version",
@@ -465,12 +468,6 @@ class PortainerImageAPI:
             ):
                 if labels.get(label):
                     return str(labels[label])
-            if created := image_data.get("Created"):
-                try:
-                    parsed = dt.datetime.fromisoformat(str(created).replace("Z", "+00:00"))
-                    return parsed.strftime("%Y.%m.%d")
-                except Exception:
-                    pass
             return self._digest_short(image_data.get("Id"))
         except Exception as err:
             _LOGGER.debug("Failed to extract image version: %s", err)
