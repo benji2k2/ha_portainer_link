@@ -13,6 +13,42 @@ from aiohttp.client_exceptions import ClientConnectorCertificateError
 _LOGGER = logging.getLogger(__name__)
 
 
+def local_platform_digest(image_info: dict[str, Any] | None, container_id: str | None = None) -> str | None:
+    """Digest of the platform manifest a local image runs from, containerd store only.
+
+    On the containerd image store docker's image id is the digest of the whole
+    index, not the config digest the classic store uses. The index moves when
+    only attestations are re-pushed; the platform manifest does not, so it is
+    the value to compare with the registry. The classic store has no
+    "Manifests" and gets None.
+    """
+    manifests = [
+        m for m in (image_info or {}).get("Manifests") or []
+        if m.get("Kind") == "image" and m.get("Available", True)
+    ]
+    if not manifests:
+        return None
+    if container_id:
+        for m in manifests:
+            if container_id in ((m.get("ImageData") or {}).get("Containers") or []):
+                return PortainerImageAPI._normalize_digest(m.get("ID"))
+    want = (
+        str((image_info or {}).get("Os") or "linux").lower(),
+        str((image_info or {}).get("Architecture") or "").lower(),
+        str((image_info or {}).get("Variant") or "").lower(),
+    )
+    for m in manifests:
+        platform = (m.get("ImageData") or {}).get("Platform") or (m.get("Descriptor") or {}).get("platform") or {}
+        have = (
+            str(platform.get("os") or "").lower(),
+            str(platform.get("architecture") or "").lower(),
+            str(platform.get("variant") or "").lower(),
+        )
+        if have[:2] == want[:2] and (not want[2] or have[2] == want[2]):
+            return PortainerImageAPI._normalize_digest(m.get("ID"))
+    return None
+
+
 class PortainerImageAPI:
     """Handle Docker image metadata and explicit image pulls."""
 
@@ -221,6 +257,7 @@ class PortainerImageAPI:
             "created": None,
             "labels": {},
             "child_digests": set(),
+            "platform_digest": None,
         }
         try:
             registry, repository, reference, _pinned = self._parse_image_ref(image_name)
@@ -234,6 +271,7 @@ class PortainerImageAPI:
             if not document:
                 return state
             state["manifest_digest"] = self._normalize_digest(digest)
+            state["platform_digest"] = state["manifest_digest"]
 
             if document.get("manifests"):
                 state["child_digests"] = {
@@ -241,6 +279,7 @@ class PortainerImageAPI:
                     if (d := self._normalize_digest(m.get("digest")))
                 }
                 child = self._select_platform_manifest(document, local_image)
+                state["platform_digest"] = self._normalize_digest(child)
                 if not child:
                     return state
                 document, _ = await self._registry_get_json(f"{base}/manifests/{child}", repository)
@@ -387,9 +426,13 @@ class PortainerImageAPI:
             return False
 
     async def get_image_info(self, endpoint_id: int, image_id: str) -> dict[str, Any] | None:
-        """Get detailed information about a local Docker image."""
+        """Get detailed information about a local Docker image.
+
+        manifests=1 adds the per-platform manifests on the containerd image
+        store (API 1.48+); older engines and the classic store ignore it.
+        """
         try:
-            url = f"{self.base_url}/api/endpoints/{endpoint_id}/docker/images/{image_id}/json"
+            url = f"{self.base_url}/api/endpoints/{endpoint_id}/docker/images/{image_id}/json?manifests=1"
             session = self.session or self.auth.session
             async with session.get(url, headers=self.auth.get_headers(), ssl=self.ssl_verify) as resp:
                 if resp.status == 200:

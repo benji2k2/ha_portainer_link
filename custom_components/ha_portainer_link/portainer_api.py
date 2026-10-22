@@ -460,7 +460,7 @@ class PortainerAPI:
         except Exception:
             pass
         # Legacy fallback
-        url = f"{self.base_url}/api/endpoints/{endpoint_id}/docker/images/{image_id}/json"
+        url = f"{self.base_url}/api/endpoints/{endpoint_id}/docker/images/{image_id}/json?manifests=1"
         async with self.session.get(url, headers=self.headers, ssl=False) as resp:
             if resp.status == 200:
                 return await resp.json()

@@ -16,6 +16,7 @@ collected — it runs every check first, so one break does not hide the rest.
 | `test_imageref.py` | Zerlegen von Image-Referenzen, Abgleich gegen `RepoDigests` |
 | `test_pullsplit.py` | Name/Tag-Trennung vor dem Pull |
 | `test_digests.py` | Index- gegen Config-Digest, Plattformauswahl, Anzeige |
+| `test_containerd.py` | containerd-Image-Store: Abgleich über das Plattform-Manifest, kein Fehl-Update, klassischer Store unverändert |
 | `test_devices.py` | Geräte-Identitäten, Benennung, Aufräumen nach Options-Wechsel |
 | `test_health.py` | Healthcheck-Erkennung und Zählung |
 | `test_instance.py` | Instanz-Aggregate, löschbare Images, Build-Datum |

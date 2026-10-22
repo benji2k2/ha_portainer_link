@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.5] - 2026-10-22
+
+### Fixed
+- Containers on a host with Docker's containerd image store no longer all show an update. There the image id is the digest of the whole multi-platform index, while the update check compares it with the config digest from the registry - two different objects that never match, so every container counted as outdated. Fresh Docker 29 installations use this store by default. The local image is now matched with the registry through its platform manifest, read with `?manifests=1` in the image request that is made anyway, so no extra Portainer or registry call. Like the config digest, the platform manifest stays the same when only attestations are re-pushed. Hosts on the classic store are unchanged.
+
 ## [0.11.4] - 2026-10-17
 
 ### Fixed

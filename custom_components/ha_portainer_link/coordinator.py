@@ -32,6 +32,7 @@ from .const import (
     DEFAULT_OPTIONS,
 )
 from .entity import container_name, is_container_running, stable_container_key, stack_info_from_container
+from .image_api import local_platform_digest
 from .portainer_api import PortainerAPI
 from .release_notes import SOURCE_LABEL, VERSION_LABEL, ReleaseNotesClient, parse_overrides
 from .tag_versions import TagVersionClient
@@ -295,6 +296,9 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                             labels = (image_info.get("Config") or {}).get("Labels") or {}
                             data["oci_version"] = labels.get(VERSION_LABEL)
                             data["oci_source"] = labels.get(SOURCE_LABEL)
+                            if platform := local_platform_digest(image_info, (info or {}).get("Id")):
+                                data["current_platform_digest"] = platform
+                                self._adopt_config_digest(container_id, data)
                         current_digest = await self.api.get_current_digest(self.endpoint_id, container_id)
                         if current_digest:
                             data["current_digest"] = current_digest
@@ -316,6 +320,8 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                         # id docker itself compares, so it decides here and the
                         # manifest digests stay purely informational.
                         remote_config = remote.get("config_digest")
+                        if remote.get("platform_digest"):
+                            data["available_platform_digest"] = remote["platform_digest"]
                         if remote_config:
                             data["available_config_digest"] = remote_config
                             if created := remote.get("created"):
@@ -324,7 +330,10 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                             data["available_oci_version"] = remote_labels.get(VERSION_LABEL)
                             if remote_labels.get(SOURCE_LABEL):
                                 data["available_oci_source"] = remote_labels[SOURCE_LABEL]
-                            update_availability[container_id] = bool(image_id and remote_config != image_id)
+                            self._adopt_config_digest(container_id, data)
+                            update_availability[container_id] = bool(
+                                image_id and remote_config != data["current_config_digest"]
+                            )
                         elif available_digest:
                             current_digest = data.get("current_digest")
                             update_availability[container_id] = bool(
@@ -361,6 +370,23 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
             # After the availability map is final, so a restart restores the
             # update states exactly as the sweep left them.
             await self._async_save_state()
+
+    def _adopt_config_digest(self, container_id: str, data: dict[str, Any]) -> None:
+        """Give a containerd-store image the config digest the registry found for it.
+
+        There the local image id is the index digest, which never equals the
+        registry's config digest - every container looked outdated. When the
+        local platform manifest is the one the registry walk resolved, the
+        config digest is that walk's, and everything comparing image ids
+        (update state, display, clearing after an install) works unchanged.
+        """
+        local = data.get("current_platform_digest")
+        if not local:
+            return
+        source = data if data.get("available_platform_digest") else self.image_data.get(container_id, {})
+        config = source.get("available_config_digest")
+        if config and local == source.get("available_platform_digest"):
+            data["current_config_digest"] = config
 
     async def _refresh_tag_versions(
         self, container_id: str, image_name: str | None, data: dict[str, Any], include_registry: bool
