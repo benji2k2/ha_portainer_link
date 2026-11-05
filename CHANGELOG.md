@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.9] - 2026-11-05
+
+### Fixed
+- An update installed between two registry checks no longer leaves the container offering the version it just replaced. The check runs every six hours; when a newer release appeared after it, an update - from Home Assistant through Watchtower or by hand - pulled that newer image, but the entity kept the result of the last check and offered the older version as an update, `1.79.2` while `1.79.3` was running. When a container runs a different image than at the last look, its registry state is now checked again right away, for that one container only, and the cached tag list of its repository is dropped so the new version shows with its number. Containers whose image did not change cost no extra request.
+
 ## [0.11.8] - 2026-10-22
 
 ### Fixed

@@ -170,3 +170,6 @@ class TagVersionClient:
 
     def clear_cache(self) -> None:
         self._cache.clear()
+
+    def forget(self, registry: str, repository: str) -> None:
+        self._cache.pop(f"{registry}/{repository}", None)

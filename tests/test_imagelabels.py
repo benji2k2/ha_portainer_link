@@ -50,7 +50,7 @@ async def main():
     c.section("nach der installation (zwischen zwei sweeps)")
     api.image_id = NEU
     await k._refresh_image_data_if_due()
-    c("kein registry-abruf dazwischen", api.remote_calls, 1)
+    c("ein registry-abruf nur fuer das gewechselte image", api.remote_calls, 2)
     c("update erlischt sofort", k.update_availability, {"cid": False})
     c("laufende version jetzt die neue", k.image_data["cid"]["oci_version"], "v3.7.15")
 

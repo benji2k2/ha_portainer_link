@@ -126,7 +126,7 @@ async def main():
     c.section("nach der installation (zwischen zwei sweeps)")
     api2.info = local_image(INDEX_NEU, AMD64_NEU)
     await k2._refresh_image_data_if_due()
-    c("kein registry-abruf dazwischen", api2.remote_calls, 1)
+    c("ein registry-abruf nur fuer das gewechselte image", api2.remote_calls, 2)
     c("update erlischt sofort", k2.update_availability, {"cid": False})
     c("installiert jetzt die neue config-id", k2.image_data["cid"]["current_config_digest"], CONFIG_NEU)
 

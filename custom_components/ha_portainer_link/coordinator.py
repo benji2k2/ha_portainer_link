@@ -274,10 +274,12 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
         image_data: dict[str, dict[str, Any]] = {}
         update_availability = dict(self.update_availability)
         semaphore = asyncio.Semaphore(3)
+        rechecked: set[str] = set()
 
         async def refresh_one(container_id: str) -> None:
             async with semaphore:
                 data: dict[str, Any] = {}
+                check_registry = include_registry
                 try:
                     info = await self.api.inspect_container(self.endpoint_id, container_id)
                     image_name = ((info or {}).get("Config") or {}).get("Image")
@@ -289,6 +291,20 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                         # The local image id is available every cycle; only the
                         # remote counterpart needs a registry window.
                         data["current_config_digest"] = image_id
+                        data["local_image_id"] = image_id
+                        # A different image since the last look means it was
+                        # updated - from here, by Watchtower or by hand - and the
+                        # last sweep's result describes the old one. A release
+                        # published after that sweep is what such an update
+                        # pulls, so the container stayed "outdated", offered the
+                        # older version it already left behind (scrutiny
+                        # 1.79.3 running, 1.79.2 offered, 05.11.2026). One
+                        # registry walk for this container only settles it.
+                        before = self.image_data.get(container_id, {}).get("local_image_id")
+                        if not include_registry and before and before != image_id:
+                            check_registry = True
+                            rechecked.add(container_id)
+                            self._forget_tag_versions(image_name)
                         image_info = await self.api.get_image_info(self.endpoint_id, image_id)
                         if image_info:
                             data["current_version"] = self.api.extract_version_from_image(image_info)
@@ -302,7 +318,7 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                         current_digest = await self.api.get_current_digest(self.endpoint_id, container_id)
                         if current_digest:
                             data["current_digest"] = current_digest
-                    if include_registry and image_name:
+                    if check_registry and image_name:
                         # One walk of the manifest yields all three values. Every
                         # manifest request counts against the registry's pull
                         # quota, so asking three times over would triple the cost
@@ -342,13 +358,17 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                                 and current_digest != available_digest
                             )
                         data["available_version"] = await self.api.get_available_version(self.endpoint_id, image_name)
-                    await self._refresh_tag_versions(container_id, image_name, data, include_registry)
+                    await self._refresh_tag_versions(container_id, image_name, data, check_registry)
                 except Exception as err:
                     _LOGGER.debug("Failed to refresh image data for %s: %s", container_id, err)
                 image_data[container_id] = {**self.image_data.get(container_id, {}), **data}
 
         await asyncio.gather(*(refresh_one(container_id) for container_id in self.containers))
         self.image_data = image_data
+        if not include_registry and self.is_update_sensors_enabled():
+            for container_id in rechecked:
+                if container_id in update_availability:
+                    self.update_availability[container_id] = bool(update_availability[container_id])
         # An update installed between two sweeps - from here, by Watchtower or
         # by hand - leaves the container on exactly the image the last sweep
         # found. Clearing it now beats showing a stale update for hours.
@@ -366,10 +386,25 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
         elif not self.is_update_sensors_enabled():
             self.update_availability = {}
 
-        if include_registry:
+        if include_registry or rechecked:
             # After the availability map is final, so a restart restores the
             # update states exactly as the sweep left them.
             await self._async_save_state()
+
+    def _forget_tag_versions(self, image_name: str | None) -> None:
+        """Drop the cached tag list of this image's repository.
+
+        It is up to an hour old, so it may predate the release just installed,
+        which then would show without its version.
+        """
+        client = getattr(self, "tag_versions", None)
+        if client is None or not image_name:
+            return
+        try:
+            registry, repository, _reference, _pinned = self.api.images._parse_image_ref(image_name)
+        except Exception:
+            return
+        client.forget(registry, repository)
 
     def _adopt_config_digest(self, container_id: str, data: dict[str, Any]) -> None:
         """Give a containerd-store image the config digest the registry found for it.
