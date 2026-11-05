@@ -15,7 +15,14 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import EntityCategory
 
 from .const import DATA_COORDINATOR, DOMAIN
-from .entity import BaseContainerEntity, container_name, parse_docker_time, short_digest
+from .entity import (
+    BaseContainerEntity,
+    available_version_of,
+    container_name,
+    installed_version_of,
+    parse_docker_time,
+    short_digest,
+)
 from .portainer_api import PortainerError
 from .release_notes import render, resolve_repo, select_releases
 from .watchtower import WatchtowerError
@@ -90,7 +97,7 @@ class ContainerUpdateEntity(BaseContainerEntity, UpdateEntity):
     def installed_version(self):
         data = self._image_data
         image_id = data.get("current_config_digest") or data.get("current_digest")
-        version = data.get("oci_version") or data.get("tag_version")
+        version = installed_version_of(data)
         if version or image_id:
             return self._label(version, image_id)
         return data.get("current_version")
@@ -101,7 +108,7 @@ class ContainerUpdateEntity(BaseContainerEntity, UpdateEntity):
         if not self.coordinator.get_update_availability(self.current_container_id):
             return self.installed_version
         image_id = data.get("available_config_digest") or data.get("available_digest")
-        version = data.get("available_oci_version") or data.get("available_tag_version")
+        version = available_version_of(data)
         return self._label(version, image_id) or data.get("available_version")
 
     def version_is_newer(self, latest_version: str, installed_version: str) -> bool:
@@ -172,8 +179,8 @@ class ContainerUpdateEntity(BaseContainerEntity, UpdateEntity):
             return f"Could not load the releases of [{repo}](https://github.com/{repo}/releases) from GitHub."
         data = self._image_data
         update = self.coordinator.get_update_availability(self.current_container_id)
-        installed = data.get("oci_version") or data.get("tag_version")
-        available = data.get("available_oci_version") or data.get("available_tag_version")
+        installed = installed_version_of(data)
+        available = available_version_of(data)
         selected = select_releases(
             releases,
             installed_version=installed,

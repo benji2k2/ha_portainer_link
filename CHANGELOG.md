@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.10] - 2026-11-05
+
+### Fixed
+- Docker's official images show their installed version again when no tag points at the running image any more. They carry no version label, so the version came from the tags sharing the image's digest; `redis` keeps some 1200 tags, and after `latest` was rebuilt the running index sat in none of the 100 most recently updated, so only the image id showed. These images record their version in an environment variable named after the image - `REDIS_VERSION=8.10.3`, `NGINX_VERSION`, `NODE_VERSION` - which is now read from the local image and from the config blob the registry check fetches anyway, as the last fallback after the label and the tag lookup. No extra request. Only the variable matching the image name counts, and only a dotted version: a Debian epoch and build suffix are dropped (`1:11.8.3+maria~ubu2404` reads `11.8.3`).
+
 ## [0.11.9] - 2026-11-05
 
 ### Fixed

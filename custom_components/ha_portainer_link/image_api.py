@@ -255,6 +255,7 @@ class PortainerImageAPI:
             "config_digest": None,
             "created": None,
             "labels": {},
+            "env": [],
             "child_digests": set(),
             "platform_digest": None,
         }
@@ -294,6 +295,8 @@ class PortainerImageAPI:
                 # The same blob carries the image labels, so the new image's
                 # version and source repository come without another request.
                 state["labels"] = ((blob or {}).get("config") or {}).get("Labels") or {}
+                # And the environment, where official images keep their version.
+                state["env"] = ((blob or {}).get("config") or {}).get("Env") or []
         except Exception as err:
             _LOGGER.debug("Failed to resolve remote image state for %s: %s", image_name, err)
         return state

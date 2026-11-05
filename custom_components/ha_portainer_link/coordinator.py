@@ -31,7 +31,13 @@ from .const import (
     CONF_WATCHTOWER_URL,
     DEFAULT_OPTIONS,
 )
-from .entity import container_name, is_container_running, stable_container_key, stack_info_from_container
+from .entity import (
+    container_name,
+    env_version,
+    is_container_running,
+    stable_container_key,
+    stack_info_from_container,
+)
 from .image_api import local_platform_digest
 from .portainer_api import PortainerAPI
 from .release_notes import SOURCE_LABEL, VERSION_LABEL, ReleaseNotesClient, parse_overrides
@@ -312,6 +318,9 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                             labels = (image_info.get("Config") or {}).get("Labels") or {}
                             data["oci_version"] = labels.get(VERSION_LABEL)
                             data["oci_source"] = labels.get(SOURCE_LABEL)
+                            data["env_version"] = env_version(
+                                (image_info.get("Config") or {}).get("Env"), image_name
+                            )
                             if platform := local_platform_digest(image_info, (info or {}).get("Id")):
                                 data["current_platform_digest"] = platform
                                 self._adopt_config_digest(container_id, data)
@@ -344,6 +353,7 @@ class PortainerDataUpdateCoordinator(DataUpdateCoordinator):
                                 data["available_image_created"] = created
                             remote_labels = remote.get("labels") or {}
                             data["available_oci_version"] = remote_labels.get(VERSION_LABEL)
+                            data["available_env_version"] = env_version(remote.get("env"), image_name)
                             if remote_labels.get(SOURCE_LABEL):
                                 data["available_oci_source"] = remote_labels[SOURCE_LABEL]
                             self._adopt_config_digest(container_id, data)

@@ -12,8 +12,10 @@ from .entity import (
     HEALTH_UNHEALTHY,
     BaseContainerEntity,
     BaseHubEntity,
+    available_version_of,
     container_health,
     container_name,
+    installed_version_of,
     is_container_running,
     parse_docker_time,
     short_digest,
@@ -88,9 +90,11 @@ class PortainerContainerSensor(BaseContainerEntity, SensorEntity):
         container_id = self.current_container_id
         return self.coordinator.metrics.get(container_id or "", {}).get(key)
 
+    def _image_data_dict(self) -> dict:
+        return self.coordinator.image_data.get(self.current_container_id or "", {})
+
     def image_value(self, key: str):
-        container_id = self.current_container_id
-        return self.coordinator.image_data.get(container_id or "", {}).get(key)
+        return self._image_data_dict().get(key)
 
 
 class ContainerStatusSensor(PortainerContainerSensor):
@@ -205,9 +209,8 @@ class ContainerCurrentVersionSensor(PortainerContainerSensor):
 
     @property
     def native_value(self):
-        # Same order as the update entity: image label, then the tag the registry maps the image to.
-        return (self.image_value("oci_version") or self.image_value("tag_version")
-                or self.image_value("current_version"))
+        # Same order as the update entity: image label, registry tag, the image's own variable.
+        return installed_version_of(self._image_data_dict()) or self.image_value("current_version")
 
 
 class ContainerAvailableVersionSensor(PortainerContainerSensor):
@@ -217,8 +220,7 @@ class ContainerAvailableVersionSensor(PortainerContainerSensor):
 
     @property
     def native_value(self):
-        return (self.image_value("available_oci_version") or self.image_value("available_tag_version")
-                or self.image_value("available_version"))
+        return available_version_of(self._image_data_dict()) or self.image_value("available_version")
 
 
 class DigestSensor(PortainerContainerSensor):

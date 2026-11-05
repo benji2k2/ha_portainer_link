@@ -25,6 +25,7 @@ collected — it runs every check first, so one break does not hide the rest.
 | `test_install.py` | Recreate beim Installieren, Schutzfälle |
 | `test_manualcheck.py` | erzwungener Registry-Check |
 | `test_recheck.py` | Image-Wechsel zwischen zwei Sweeps: Registry nur fuer diesen Container neu fragen, Tag-Cache verwerfen, Zustand speichern |
+| `test_envversion.py` | Version aus `<NAME>_VERSION` offizieller Images: Auslesen, Epoch/Suffix, Reihenfolge Label → Tag → Env, Registry-Blob, Anzeige |
 | `test_ratelimit.py` | Anfragezahl pro Image, Token-Wiederverwendung, Persistenz |
 | `test_options.py` | jede Option im Formular und ausgewertet |
 | `test_reconfigure.py` | Zugangsdaten neu konfigurieren: Formular ohne Geheimnisse, leeres Feld behält den Wert, Host/Endpoint fest, Fehler speichert nichts |

@@ -131,6 +131,50 @@ def short_digest(value: str | None, length: int = 12) -> str | None:
     return (hexpart or text)[:length]
 
 
+# An optional epoch ("1:" in Debian versions) is dropped, and so is anything
+# after the dotted version except a prerelease marker: MARIADB_VERSION reads
+# "1:11.8.3+maria~ubu2404", which is version 11.8.3.
+_ENV_VERSION = re.compile(r"^(?:\d+:)?(v?\d+(?:\.\d+)+(?:-(?:alpha|beta|rc)\.?\d*)?)")
+
+
+def env_version(env: list[str] | None, image_name: str | None) -> str | None:
+    """The version official images record in `<NAME>_VERSION`, e.g. REDIS_VERSION=8.10.3.
+
+    Docker's official images carry no version label, and their tags can stop
+    pointing at a running image: redis keeps 1200 tags, a rebuild of `latest`
+    leaves the previous index without any, and the tag lookup finds nothing.
+    The variable sits in the image config itself - locally and in the config
+    blob the registry check reads anyway. Only the variable named after the
+    image counts; others like GOSU_VERSION describe a helper tool.
+    """
+    if not env or not image_name:
+        return None
+    name = str(image_name).split("@", 1)[0].rsplit("/", 1)[-1].split(":", 1)[0]
+    if not name:
+        return None
+    key = re.sub(r"[^A-Za-z0-9]", "_", name).upper() + "_VERSION"
+    for item in env:
+        variable, _, value = str(item).partition("=")
+        if variable == key:
+            match = _ENV_VERSION.match(value.strip())
+            return match.group(1) if match else None
+    return None
+
+
+def installed_version_of(data: dict[str, Any]) -> str | None:
+    """Image label first, then the tag the registry maps the image to, then the image's own variable."""
+    return data.get("oci_version") or data.get("tag_version") or data.get("env_version")
+
+
+def available_version_of(data: dict[str, Any]) -> str | None:
+    """The same order for the image the registry offers."""
+    return (
+        data.get("available_oci_version")
+        or data.get("available_tag_version")
+        or data.get("available_env_version")
+    )
+
+
 def container_health(container: dict[str, Any] | None) -> str | None:
     """Return the docker healthcheck state, or None when no healthcheck applies.
 
